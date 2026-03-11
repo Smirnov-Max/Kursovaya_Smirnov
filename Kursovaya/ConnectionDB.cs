@@ -175,5 +175,81 @@ namespace Smirnov_kursovaya.Database
             }
             return imported;
         }
+        public DataTable GetProductsWithPagination(int page, int pageSize, string searchText, string category, out int totalRecords)
+        {
+            DataTable dt = new DataTable();
+            totalRecords = 0;
+
+            try
+            {
+                using (var conn = GetConnection())
+                {
+                    conn.Open();
+
+                    string countQuery = "SELECT COUNT(*) FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE 1=1";
+
+                    if (!string.IsNullOrEmpty(searchText))
+                        countQuery += " AND (p.name LIKE @search OR p.article LIKE @search)";
+
+                    if (!string.IsNullOrEmpty(category) && category != "Все категории")
+                        countQuery += " AND c.name = @category";
+
+                    using (var cmd = new MySqlCommand(countQuery, conn))
+                    {
+                        if (!string.IsNullOrEmpty(searchText))
+                            cmd.Parameters.AddWithValue("@search", "%" + searchText + "%");
+                        if (!string.IsNullOrEmpty(category) && category != "Все категории")
+                            cmd.Parameters.AddWithValue("@category", category);
+
+                        totalRecords = Convert.ToInt32(cmd.ExecuteScalar());
+                    }
+
+                    // УБИРАЕМ quantity ИЗ ЗАПРОСА
+                    string query = @"
+                SELECT 
+                    p.id, 
+                    p.article, 
+                    p.name, 
+                    p.description, 
+                    p.price, 
+                    p.image, 
+                    c.name as category_name,
+                    c.id as category_id
+                FROM products p 
+                LEFT JOIN categories c ON p.category_id = c.id 
+                WHERE 1=1";
+
+                    if (!string.IsNullOrEmpty(searchText))
+                        query += " AND (p.name LIKE @search OR p.article LIKE @search)";
+
+                    if (!string.IsNullOrEmpty(category) && category != "Все категории")
+                        query += " AND c.name = @category";
+
+                    query += " ORDER BY p.id LIMIT @offset, @limit";
+
+                    using (var cmd = new MySqlCommand(query, conn))
+                    {
+                        if (!string.IsNullOrEmpty(searchText))
+                            cmd.Parameters.AddWithValue("@search", "%" + searchText + "%");
+                        if (!string.IsNullOrEmpty(category) && category != "Все категории")
+                            cmd.Parameters.AddWithValue("@category", category);
+
+                        cmd.Parameters.AddWithValue("@offset", (page - 1) * pageSize);
+                        cmd.Parameters.AddWithValue("@limit", pageSize);
+
+                        using (var adapter = new MySqlDataAdapter(cmd))
+                        {
+                            adapter.Fill(dt);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Ошибка при загрузке данных: " + ex.Message);
+            }
+
+            return dt;
+        }
     }
 }

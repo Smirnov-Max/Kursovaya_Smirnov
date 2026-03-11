@@ -1,6 +1,7 @@
 ﻿// ProductsForm.cs
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -16,7 +17,14 @@ namespace Smirnov_kursovaya.secondForm
         private bool isEditMode = false;
         private int currentProductId = 0;
         private bool readOnlyMode = false;
-        private DataGridViewImageColumn imageColumn;
+
+        // Поля для пагинации
+        private int currentPage = 1;
+        private int pageSize = 20;
+        private int totalRecords = 0;
+        private int totalPages = 1;
+        private string currentSearchText = "";
+        private string currentCategory = "";
 
         // Хранит временный путь к изображению до сохранения
         private string tempImagePath = null;
@@ -45,8 +53,8 @@ namespace Smirnov_kursovaya.secondForm
             }
 
             InitializeControls();
-            LoadProducts();
             LoadCategories();
+            LoadProductsPage(1); // Загружаем первую страницу
 
             // Подписываемся на событие изменения размера формы
             this.Resize += (s, e) => {
@@ -57,7 +65,6 @@ namespace Smirnov_kursovaya.secondForm
             };
         }
 
-        // Обработчик загрузки формы для исправления ошибки
         private void ProductsForm_Load(object sender, EventArgs e)
         {
             // Инициализация при загрузке формы
@@ -92,21 +99,14 @@ namespace Smirnov_kursovaya.secondForm
             // Перемещаем и растягиваем DataGridView
             if (productsDataGridView != null)
             {
-                // Устанавливаем позицию DataGridView сразу под панелью фильтрации
-                productsDataGridView.Top = categoryFilterComboBox.Bottom + 30; // Отступ после фильтра
-
-                // Растягиваем на всю доступную ширину
+                productsDataGridView.Top = categoryFilterComboBox.Bottom + 30;
                 productsDataGridView.Left = 10;
-                productsDataGridView.Width = this.ClientSize.Width - 20; // Отступы по краям
-
-                // Растягиваем на всю доступную высоту
+                productsDataGridView.Width = this.ClientSize.Width - 20;
                 productsDataGridView.Height = this.ClientSize.Height - productsDataGridView.Top - 10;
-
-                // Устанавливаем режим заполнения для колонок
                 productsDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
             }
 
-            // Блокируем поля ввода (на всякий случай, хотя они скрыты)
+            // Блокируем поля ввода
             nameTextBox.ReadOnly = true;
             articleTextBox.ReadOnly = true;
             priceTextBox.ReadOnly = true;
@@ -120,7 +120,7 @@ namespace Smirnov_kursovaya.secondForm
             descriptionTextBox.BackColor = Color.FromArgb(240, 240, 240);
             categoryComboBox.BackColor = Color.FromArgb(240, 240, 240);
 
-            // Убираем плейсхолдеры и устанавливаем обычный текст
+            // Убираем плейсхолдеры
             if (nameTextBox.Text == "Название товара")
                 nameTextBox.Text = "";
             if (articleTextBox.Text == "Артикул (только цифры)")
@@ -140,7 +140,7 @@ namespace Smirnov_kursovaya.secondForm
             SetPlaceholderText(articleTextBox, "Артикул (только цифры)");
             SetPlaceholderText(priceTextBox, "Цена (например: 1000.50)");
 
-            // Настройка DataGridView с изображениями
+            // Настройка DataGridView (стилизация и русские заголовки)
             SetupDataGridView();
 
             productPictureBox.BorderStyle = BorderStyle.FixedSingle;
@@ -164,9 +164,9 @@ namespace Smirnov_kursovaya.secondForm
 
         private void ApplyCoralButtonStyle()
         {
-            Color coralColor = Color.FromArgb(255, 127, 80); // Coral цвет
-            Color coralLightColor = Color.FromArgb(255, 147, 100); // Светлее для hover
-            Color coralDarkColor = Color.FromArgb(235, 107, 60); // Темнее для нажатия
+            Color coralColor = Color.FromArgb(255, 127, 80);
+            Color coralLightColor = Color.FromArgb(255, 147, 100);
+            Color coralDarkColor = Color.FromArgb(235, 107, 60);
 
             foreach (Control control in this.Controls)
             {
@@ -184,36 +184,32 @@ namespace Smirnov_kursovaya.secondForm
                         }
                     }
                 }
+                else if (control is Panel panel) // для панели пагинации
+                {
+                    foreach (Control subControl in panel.Controls)
+                    {
+                        if (subControl is Button subButton)
+                        {
+                            ApplyButtonStyle(subButton, coralColor, coralLightColor, coralDarkColor);
+                        }
+                    }
+                }
             }
 
-            // Особый стиль для кнопки меню (можно сделать другого цвета)
+            // Особый стиль для кнопки меню
             if (menuButton != null)
             {
-                menuButton.BackColor = Color.Red; // Cornflower Blue
+                menuButton.BackColor = Color.Red;
                 menuButton.FlatStyle = FlatStyle.Flat;
                 menuButton.FlatAppearance.BorderColor = Color.DarkRed;
                 menuButton.FlatAppearance.BorderSize = 1;
                 menuButton.ForeColor = Color.Black;
                 menuButton.Font = new Font(menuButton.Font, FontStyle.Regular);
 
-                // Убираем старые обработчики и добавляем новые
-                menuButton.MouseEnter -= (s, e) => { };
-                menuButton.MouseLeave -= (s, e) => { };
-                menuButton.MouseDown -= (s, e) => { };
-                menuButton.MouseUp -= (s, e) => { };
-
-                menuButton.MouseEnter += (s, e) => {
-                    menuButton.BackColor = Color.IndianRed;
-                };
-                menuButton.MouseLeave += (s, e) => {
-                    menuButton.BackColor = Color.Red;
-                };
-                menuButton.MouseDown += (s, e) => {
-                    menuButton.BackColor = Color.OrangeRed;
-                };
-                menuButton.MouseUp += (s, e) => {
-                    menuButton.BackColor = Color.OrangeRed;
-                };
+                menuButton.MouseEnter += (s, e) => { menuButton.BackColor = Color.IndianRed; };
+                menuButton.MouseLeave += (s, e) => { menuButton.BackColor = Color.Red; };
+                menuButton.MouseDown += (s, e) => { menuButton.BackColor = Color.OrangeRed; };
+                menuButton.MouseUp += (s, e) => { menuButton.BackColor = Color.OrangeRed; };
             }
         }
 
@@ -226,73 +222,55 @@ namespace Smirnov_kursovaya.secondForm
             button.ForeColor = Color.Black;
             button.Font = new Font(button.Font, FontStyle.Regular);
 
-            // Убираем старые обработчики
-            button.MouseEnter -= (s, e) => { };
-            button.MouseLeave -= (s, e) => { };
-            button.MouseDown -= (s, e) => { };
-            button.MouseUp -= (s, e) => { };
-
-            // Добавляем новые обработчики
-            button.MouseEnter += (s, e) => {
-                button.BackColor = hoverColor;
-            };
-            button.MouseLeave += (s, e) => {
-                button.BackColor = normalColor;
-            };
-            button.MouseDown += (s, e) => {
-                button.BackColor = pressedColor;
-            };
-            button.MouseUp += (s, e) => {
-                button.BackColor = hoverColor;
-            };
+            button.MouseEnter += (s, e) => { button.BackColor = hoverColor; };
+            button.MouseLeave += (s, e) => { button.BackColor = normalColor; };
+            button.MouseDown += (s, e) => { button.BackColor = pressedColor; };
+            button.MouseUp += (s, e) => { button.BackColor = hoverColor; };
         }
 
         private void SetupDataGridView()
         {
-            // Очищаем все колонки
             productsDataGridView.Columns.Clear();
 
-            // Добавляем колонку с изображением (увеличиваем ширину для лучшего просмотра)
-            imageColumn = new DataGridViewImageColumn();
-            imageColumn.Name = "image";
-            imageColumn.HeaderText = "Изображение";
-            imageColumn.ImageLayout = DataGridViewImageCellLayout.Zoom;
-            imageColumn.Width = 120; // Увеличиваем ширину колонки изображения
-            imageColumn.Visible = !readOnlyMode; // Скрываем колонку с изображением в режиме продавца
-            productsDataGridView.Columns.Add(imageColumn);
+            DataGridViewImageColumn imageCol = new DataGridViewImageColumn();
+            imageCol.Name = "image";
+            imageCol.HeaderText = "Изображение";
+            imageCol.DataPropertyName = "image";
+            imageCol.ImageLayout = DataGridViewImageCellLayout.Zoom;
+            imageCol.Width = 120;
+            productsDataGridView.Columns.Add(imageCol);
 
-            // Добавляем остальные колонки
-            productsDataGridView.Columns.Add("id", "ID");
-            productsDataGridView.Columns.Add("article", "Артикул");
-            productsDataGridView.Columns.Add("name", "Название");
-            productsDataGridView.Columns.Add("category_name", "Категория");
-            productsDataGridView.Columns.Add("price", "Цена");
-            productsDataGridView.Columns.Add("description", "Описание");
+            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "id", HeaderText = "ID", DataPropertyName = "id" });
+            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "article", HeaderText = "Артикул", DataPropertyName = "article" });
+            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "name", HeaderText = "Название", DataPropertyName = "name" });
+            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "category_name", HeaderText = "Категория", DataPropertyName = "category_name" });
+            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "price", HeaderText = "Цена", DataPropertyName = "price" });
+            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "description", HeaderText = "Описание", DataPropertyName = "description" });
 
-            // Настройка колонок
             productsDataGridView.Columns["id"].Visible = false;
+            if (productsDataGridView.Columns.Contains("category_id"))
+                productsDataGridView.Columns["category_id"].Visible = false;
+
             productsDataGridView.Columns["price"].DefaultCellStyle.Format = "C2";
 
             // Устанавливаем чередование цветов строк
-            productsDataGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 240, 255); // Очень светлый фиолетовый
+            productsDataGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 240, 255);
 
-            // Цвет выделенной строки - очень светлый фиолетовый
-            productsDataGridView.DefaultCellStyle.SelectionBackColor = Color.FromArgb(230, 210, 250); // Светлый фиолетовый для выделения
-            productsDataGridView.DefaultCellStyle.SelectionForeColor = Color.Black; // Черный текст для контраста
+            // Цвет выделенной строки
+            productsDataGridView.DefaultCellStyle.SelectionBackColor = Color.FromArgb(230, 210, 250);
+            productsDataGridView.DefaultCellStyle.SelectionForeColor = Color.Black;
 
             // Цвет заголовков
-            productsDataGridView.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(255, 127, 80); // Coral цвет
+            productsDataGridView.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(255, 127, 80);
             productsDataGridView.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
             productsDataGridView.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
             productsDataGridView.ColumnHeadersHeight = 40;
-            productsDataGridView.EnableHeadersVisualStyles = false; // Отключаем стандартные стили Windows
+            productsDataGridView.EnableHeadersVisualStyles = false;
 
-            // Устанавливаем режим заполнения для всех колонок
+            // Режим заполнения
             productsDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
 
-            // Настройка пропорций колонок
-            UpdateDataGridViewColumnsVisibility();
-
+            // Настройка выделения
             productsDataGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             productsDataGridView.ReadOnly = true;
             productsDataGridView.RowHeadersVisible = false;
@@ -300,42 +278,42 @@ namespace Smirnov_kursovaya.secondForm
             productsDataGridView.AllowUserToDeleteRows = false;
             productsDataGridView.MultiSelect = false;
 
-            // Настройка стиля сетки
+            // Настройка сетки
             productsDataGridView.GridColor = Color.LightGray;
             productsDataGridView.CellBorderStyle = DataGridViewCellBorderStyle.Single;
-            productsDataGridView.RowTemplate.Height = 130; // Увеличиваем высоту строк для изображений
+            productsDataGridView.RowTemplate.Height = 130;
+
+            // Обработчик для преобразования байтов в изображение
+            productsDataGridView.CellFormatting += (s, e) =>
+            {
+                if (productsDataGridView.Columns[e.ColumnIndex].Name == "image")
+                {
+                    if (e.Value is byte[] bytes && bytes.Length > 0)
+                    {
+                        try
+                        {
+                            using (MemoryStream ms = new MemoryStream(bytes))
+                            {
+                                e.Value = Image.FromStream(ms);
+                            }
+                        }
+                        catch
+                        {
+                            e.Value = ImageHelper.Placeholder.Clone();
+                        }
+                    }
+                    else
+                    {
+                        e.Value = ImageHelper.Placeholder.Clone();
+                    }
+                }
+            };
         }
+    
 
         private void UpdateDataGridViewColumnsVisibility()
         {
-            if (!productsDataGridView.Columns.Contains("image")) return;
-
-            if (readOnlyMode)
-            {
-                // В режиме продавца скрываем колонку с изображением
-                productsDataGridView.Columns["image"].Visible = true;
-                productsDataGridView.Columns["image"].Width = 100; // Фиксированная ширина для изображений
-
-                // Перераспределяем пропорции колонок
-                productsDataGridView.Columns["article"].FillWeight = 12;
-                productsDataGridView.Columns["name"].FillWeight = 35;
-                productsDataGridView.Columns["category_name"].FillWeight = 23;
-                productsDataGridView.Columns["price"].FillWeight = 12;
-                productsDataGridView.Columns["description"].FillWeight = 18;
-            }
-            else
-            {
-                // В режиме администратора показываем колонку с изображением
-                productsDataGridView.Columns["image"].Visible = true;
-                productsDataGridView.Columns["image"].Width = 30; // Фиксированная ширина для изображений
-
-                // Возвращаем стандартные пропорции с учетом колонки изображения
-                productsDataGridView.Columns["article"].FillWeight = 10;
-                productsDataGridView.Columns["name"].FillWeight = 30; // Увеличиваем вес названия
-                productsDataGridView.Columns["category_name"].FillWeight = 15;
-                productsDataGridView.Columns["price"].FillWeight = 10;
-                productsDataGridView.Columns["description"].FillWeight = 20;
-            }
+            // Можно оставить пустым или настроить видимость колонок в зависимости от режима
         }
 
         private void SetPlaceholderText(TextBox textBox, string placeholder)
@@ -361,54 +339,6 @@ namespace Smirnov_kursovaya.secondForm
                     textBox.ForeColor = Color.Gray;
                 }
             };
-        }
-
-        private void LoadProducts()
-        {
-            try
-            {
-                using (var connection = dbHelper.GetConnection())
-                {
-                    connection.Open();
-                    string query = @"SELECT p.id, p.article, p.name, c.name as category_name, 
-                                    p.price, p.description, p.image
-                                    FROM products p 
-                                    INNER JOIN categories c ON p.category_id = c.id
-                                    ORDER BY p.name";
-                    using (var command = new MySqlCommand(query, connection))
-                    using (var reader = command.ExecuteReader())
-                    {
-                        productsDataGridView.Rows.Clear();
-
-                        while (reader.Read())
-                        {
-                            int rowIndex = productsDataGridView.Rows.Add();
-                            DataGridViewRow row = productsDataGridView.Rows[rowIndex];
-
-                            // Загрузка изображения из BLOB
-                            byte[] imageData = reader["image"] != DBNull.Value ?
-                                (byte[])reader["image"] : null;
-
-                            Image productImage = ImageHelper.ByteArrayToImage(imageData);
-
-                            row.Cells["image"].Value = productImage ?? ImageHelper.Placeholder;
-
-                            // Остальные данные
-                            row.Cells["id"].Value = reader["id"];
-                            row.Cells["article"].Value = reader["article"];
-                            row.Cells["name"].Value = reader["name"];
-                            row.Cells["category_name"].Value = reader["category_name"];
-                            row.Cells["price"].Value = reader["price"];
-                            row.Cells["description"].Value = reader["description"]?.ToString() ?? "";
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка загрузки товаров: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
         }
 
         private void LoadCategories()
@@ -451,6 +381,158 @@ namespace Smirnov_kursovaya.secondForm
             }
         }
 
+        // ========== МЕТОДЫ ПАГИНАЦИИ ==========
+
+        private void LoadProductsPage(int page)
+        {
+            try
+            {
+                DataTable dt = dbHelper.GetProductsWithPagination(page, pageSize, currentSearchText, currentCategory, out totalRecords);
+                totalPages = (int)Math.Ceiling((double)totalRecords / pageSize);
+                if (totalPages == 0) totalPages = 1;
+                if (page < 1) page = 1;
+                if (page > totalPages) page = totalPages;
+                currentPage = page;
+
+                // Если в таблице нет колонки image, добавлять не нужно, но метод GetProductsWithPagination должен её возвращать
+                productsDataGridView.DataSource = dt;
+
+                // Скрываем служебные колонки
+                if (productsDataGridView.Columns.Contains("id"))
+                    productsDataGridView.Columns["id"].Visible = false;
+                if (productsDataGridView.Columns.Contains("category_id"))
+                    productsDataGridView.Columns["category_id"].Visible = false;
+
+                // Форматируем цену
+                if (productsDataGridView.Columns.Contains("price"))
+                    productsDataGridView.Columns["price"].DefaultCellStyle.Format = "C2";
+
+                UpdatePaginationInfo();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка загрузки товаров: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void UpdatePaginationInfo()
+        {
+            if (lblPageInfo != null)
+                lblPageInfo.Text = $"Страница {currentPage} из {totalPages}";
+
+            if (txtPageNumber != null)
+                txtPageNumber.Text = currentPage.ToString();
+
+            if (lblRecordInfo != null)
+            {
+                int startRecord = (currentPage - 1) * pageSize + 1;
+                int endRecord = Math.Min(currentPage * pageSize, totalRecords);
+                if (totalRecords > 0)
+                    lblRecordInfo.Text = $"Записей: {startRecord}-{endRecord} из {totalRecords}";
+                else
+                    lblRecordInfo.Text = "Записей: 0 из 0";
+            }
+
+            if (btnFirstPage != null) btnFirstPage.Enabled = currentPage > 1;
+            if (btnPrevPage != null) btnPrevPage.Enabled = currentPage > 1;
+            if (btnNextPage != null) btnNextPage.Enabled = currentPage < totalPages;
+            if (btnLastPage != null) btnLastPage.Enabled = currentPage < totalPages;
+        }
+
+        private void BtnFirstPage_Click(object sender, EventArgs e) => LoadProductsPage(1);
+        private void BtnPrevPage_Click(object sender, EventArgs e) { if (currentPage > 1) LoadProductsPage(currentPage - 1); }
+        private void BtnNextPage_Click(object sender, EventArgs e) { if (currentPage < totalPages) LoadProductsPage(currentPage + 1); }
+        private void BtnLastPage_Click(object sender, EventArgs e) => LoadProductsPage(totalPages);
+
+        private void BtnGoToPage_Click(object sender, EventArgs e)
+        {
+            if (txtPageNumber != null && int.TryParse(txtPageNumber.Text, out int page))
+            {
+                if (page >= 1 && page <= totalPages)
+                {
+                    LoadProductsPage(page);
+                }
+                else
+                {
+                    MessageBox.Show($"Введите номер страницы от 1 до {totalPages}", "Ошибка",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    txtPageNumber.Text = currentPage.ToString();
+                }
+            }
+        }
+
+        private void TxtPageNumber_KeyPress(object sender, KeyPressEventArgs e)
+        {
+            if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar))
+            {
+                e.Handled = true;
+            }
+
+            if (e.KeyChar == (char)Keys.Enter)
+            {
+                BtnGoToPage_Click(sender, e);
+                e.Handled = true;
+            }
+        }
+
+        // ========== ОБРАБОТЧИКИ ПОИСКА И ФИЛЬТРАЦИИ ==========
+
+        private void searchTextBox_TextChanged(object sender, EventArgs e)
+        {
+            if (searchTextBox.Text == "Поиск по названию...")
+                currentSearchText = "";
+            else
+                currentSearchText = searchTextBox.Text;
+
+            LoadProductsPage(1);
+        }
+
+        private void categoryFilterComboBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (categoryFilterComboBox.SelectedIndex > 0)
+            {
+                dynamic selectedCategory = categoryFilterComboBox.SelectedItem;
+                currentCategory = selectedCategory.Name;
+            }
+            else
+            {
+                currentCategory = "";
+            }
+
+            LoadProductsPage(1);
+        }
+
+        private void sortButton_Click(object sender, EventArgs e)
+        {
+            DataTable dt = productsDataGridView.DataSource as DataTable;
+            if (dt != null)
+            {
+                dt.DefaultView.Sort = "name ASC";
+                productsDataGridView.DataSource = dt.DefaultView.ToTable();
+            }
+        }
+
+        private void resetButton_Click(object sender, EventArgs e)
+        {
+            searchTextBox.Text = "Поиск по названию...";
+            searchTextBox.ForeColor = Color.Gray;
+            categoryFilterComboBox.SelectedIndex = 0;
+            currentSearchText = "";
+            currentCategory = "";
+
+            LoadProductsPage(1);
+
+            ClearForm();
+            ResetFormMode();
+        }
+
+        private void menuButton_Click(object sender, EventArgs e)
+        {
+            this.Close();
+        }
+
+        // ========== МЕТОДЫ ДЛЯ РАБОТЫ С ТОВАРАМИ (ДОБАВЛЕНИЕ/РЕДАКТИРОВАНИЕ) ==========
+
         private bool ValidateProductInput()
         {
             if (string.IsNullOrEmpty(nameTextBox.Text) || nameTextBox.Text == "Название товара")
@@ -481,7 +563,6 @@ namespace Smirnov_kursovaya.secondForm
                 return false;
             }
 
-            // Проверка артикула
             if (!long.TryParse(articleTextBox.Text, out long article))
             {
                 MessageBox.Show("Артикул должен содержать только цифры", "Ошибка",
@@ -499,9 +580,6 @@ namespace Smirnov_kursovaya.secondForm
             return true;
         }
 
-        /// <summary>
-        /// Сохраняет изображение из временного файла в постоянное место с именем на основе артикула
-        /// </summary>
         private string SaveImageFromTemp(string tempPath, string article)
         {
             if (string.IsNullOrEmpty(tempPath) || !File.Exists(tempPath))
@@ -509,13 +587,9 @@ namespace Smirnov_kursovaya.secondForm
 
             try
             {
-                // Генерируем новое имя файла на основе артикула
                 string fileName = $"product_{article}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
                 string newPath = Path.Combine(imagesFolderPath, fileName);
-
-                // Копируем временный файл (не перемещаем, так как он может быть ещё нужен)
                 File.Copy(tempPath, newPath, true);
-
                 return newPath;
             }
             catch (Exception ex)
@@ -526,9 +600,6 @@ namespace Smirnov_kursovaya.secondForm
             }
         }
 
-        /// <summary>
-        /// Сохраняет изображение из PictureBox во временный файл при выборе
-        /// </summary>
         private string SaveImageToTemp(Image image)
         {
             if (image == null || image == ImageHelper.Placeholder)
@@ -537,11 +608,9 @@ namespace Smirnov_kursovaya.secondForm
             string tempPath = null;
             try
             {
-                // Создаем временный файл
                 string tempFileName = $"temp_{Guid.NewGuid():N}.png";
                 tempPath = Path.Combine(Path.GetTempPath(), tempFileName);
 
-                // Сохраняем изображение (создаем копию, чтобы не блокировать оригинал)
                 using (Bitmap bitmap = new Bitmap(image))
                 {
                     bitmap.Save(tempPath, System.Drawing.Imaging.ImageFormat.Png);
@@ -554,7 +623,6 @@ namespace Smirnov_kursovaya.secondForm
                 MessageBox.Show($"Ошибка сохранения временного изображения: {ex.Message}", "Ошибка",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
 
-                // Если произошла ошибка, пытаемся удалить временный файл
                 if (!string.IsNullOrEmpty(tempPath) && File.Exists(tempPath))
                 {
                     try { File.Delete(tempPath); } catch { }
@@ -563,9 +631,6 @@ namespace Smirnov_kursovaya.secondForm
             }
         }
 
-        /// <summary>
-        /// Удаляет файл изображения с несколькими попытками
-        /// </summary>
         private void DeleteImageFile(string imagePath, int maxAttempts = 3)
         {
             if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath))
@@ -576,18 +641,16 @@ namespace Smirnov_kursovaya.secondForm
                 try
                 {
                     File.Delete(imagePath);
-                    break; // Успешно удалили, выходим из цикла
+                    break;
                 }
                 catch (IOException)
                 {
                     if (attempt == maxAttempts)
                     {
-                        // Последняя попытка не удалась, логируем
                         System.Diagnostics.Debug.WriteLine($"Не удалось удалить файл {imagePath} после {maxAttempts} попыток");
                     }
                     else
                     {
-                        // Ждем немного перед следующей попыткой
                         System.Threading.Thread.Sleep(100);
                     }
                 }
@@ -599,14 +662,10 @@ namespace Smirnov_kursovaya.secondForm
             }
         }
 
-        /// <summary>
-        /// Загружает изображение из файла в PictureBox
-        /// </summary>
         private void LoadImageToPictureBox(string imagePath)
         {
             try
             {
-                // Освобождаем текущее изображение
                 if (productPictureBox.Image != null)
                 {
                     productPictureBox.Image.Dispose();
@@ -615,7 +674,6 @@ namespace Smirnov_kursovaya.secondForm
 
                 if (!string.IsNullOrEmpty(imagePath) && File.Exists(imagePath))
                 {
-                    // Загружаем изображение с использованием FileStream для снятия блокировки
                     using (FileStream fs = new FileStream(imagePath, FileMode.Open, FileAccess.Read, FileShare.Read))
                     {
                         productPictureBox.Image = Image.FromStream(fs);
@@ -653,14 +711,12 @@ namespace Smirnov_kursovaya.secondForm
             {
                 dynamic selectedCategory = categoryComboBox.SelectedItem;
 
-                // Сохраняем изображение в постоянное место только при нажатии кнопки
                 string savedImagePath = null;
                 if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
                 {
                     savedImagePath = SaveImageFromTemp(tempImagePath, articleTextBox.Text);
                 }
 
-                // Получаем изображение для сохранения в БД
                 byte[] imageData = null;
                 if (!string.IsNullOrEmpty(savedImagePath) && File.Exists(savedImagePath))
                 {
@@ -682,7 +738,6 @@ namespace Smirnov_kursovaya.secondForm
                             MessageBox.Show("Товар с таким артикулом уже существует", "Ошибка",
                                 MessageBoxButtons.OK, MessageBoxIcon.Error);
 
-                            // Если есть сохраненное изображение, удаляем его
                             if (!string.IsNullOrEmpty(savedImagePath))
                             {
                                 DeleteImageFile(savedImagePath);
@@ -711,7 +766,7 @@ namespace Smirnov_kursovaya.secondForm
                             MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                         ClearForm();
-                        LoadProducts();
+                        LoadProductsPage(1);
                     }
                 }
             }
@@ -753,21 +808,28 @@ namespace Smirnov_kursovaya.secondForm
             }
 
             // Загрузка изображения
-            Image image = (Image)selectedRow.Cells["image"].Value;
-            if (image != null && image != ImageHelper.Placeholder)
+            if (selectedRow.Cells["image"].Value != null && selectedRow.Cells["image"].Value != DBNull.Value)
             {
-                // Создаем копию изображения, чтобы не зависеть от DataGridView
-                productPictureBox.Image = image.Clone() as Image;
-                currentImagePathInDb = null; // Изображение из БД, пути к файлу нет
+                try
+                {
+                    byte[] imageData = (byte[])selectedRow.Cells["image"].Value;
+                    using (MemoryStream ms = new MemoryStream(imageData))
+                    {
+                        productPictureBox.Image = Image.FromStream(ms);
+                    }
+                }
+                catch
+                {
+                    productPictureBox.Image = ImageHelper.Placeholder != null ?
+                        (Image)ImageHelper.Placeholder.Clone() : null;
+                }
             }
             else
             {
                 productPictureBox.Image = ImageHelper.Placeholder != null ?
                     (Image)ImageHelper.Placeholder.Clone() : null;
-                currentImagePathInDb = null;
             }
 
-            // Очищаем временный путь
             if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
             {
                 DeleteImageFile(tempImagePath);
@@ -808,13 +870,11 @@ namespace Smirnov_kursovaya.secondForm
                         }
                     }
 
-                    // Если изображение изменилось, сохраняем его в постоянное место
                     if (imageChanged)
                     {
                         savedImagePath = SaveImageFromTemp(tempImagePath, articleTextBox.Text);
                     }
 
-                    // Получаем изображение для сохранения в БД
                     byte[] imageData = null;
                     if (!string.IsNullOrEmpty(savedImagePath) && File.Exists(savedImagePath))
                     {
@@ -823,7 +883,6 @@ namespace Smirnov_kursovaya.secondForm
                     else if (!imageChanged && productPictureBox.Image != null &&
                              productPictureBox.Image != ImageHelper.Placeholder)
                     {
-                        // Изображение не изменилось - берем его из PictureBox
                         imageData = ImageHelper.ImageToByteArray(productPictureBox.Image);
                     }
 
@@ -848,7 +907,7 @@ namespace Smirnov_kursovaya.secondForm
                             MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                         ClearForm();
-                        LoadProducts();
+                        LoadProductsPage(1);
                         ResetFormMode();
                     }
                 }
@@ -888,7 +947,6 @@ namespace Smirnov_kursovaya.secondForm
                         {
                             try
                             {
-                                // 1. Получаем список заказов, содержащих этот товар
                                 string getOrdersQuery = @"SELECT DISTINCT oi.order_id 
                                                 FROM order_items oi 
                                                 WHERE oi.product_id = @product_id";
@@ -906,7 +964,6 @@ namespace Smirnov_kursovaya.secondForm
                                     }
                                 }
 
-                                // 2. Удаляем товар из корзин заказов (order_items)
                                 string deleteOrderItemsQuery = "DELETE FROM order_items WHERE product_id = @product_id";
                                 using (var deleteOrderItemsCommand = new MySqlCommand(deleteOrderItemsQuery, connection, transaction))
                                 {
@@ -914,7 +971,6 @@ namespace Smirnov_kursovaya.secondForm
                                     deleteOrderItemsCommand.ExecuteNonQuery();
                                 }
 
-                                // 3. Удаляем товар из таблицы products
                                 string deleteProductQuery = "DELETE FROM products WHERE id = @id";
                                 using (var deleteProductCommand = new MySqlCommand(deleteProductQuery, connection, transaction))
                                 {
@@ -922,17 +978,14 @@ namespace Smirnov_kursovaya.secondForm
                                     deleteProductCommand.ExecuteNonQuery();
                                 }
 
-                                // 4. Проверяем и удаляем "пустые" заказы (где нет товаров)
                                 foreach (int orderId in orderIds)
                                 {
-                                    // Проверяем, есть ли еще товары в заказе
                                     string checkOrderQuery = "SELECT COUNT(*) FROM order_items WHERE order_id = @order_id";
                                     using (var checkCommand = new MySqlCommand(checkOrderQuery, connection, transaction))
                                     {
                                         checkCommand.Parameters.AddWithValue("@order_id", orderId);
                                         int remainingItems = Convert.ToInt32(checkCommand.ExecuteScalar());
 
-                                        // Если в заказе не осталось товаров, удаляем заказ
                                         if (remainingItems == 0)
                                         {
                                             string deleteOrderQuery = "DELETE FROM orders WHERE id = @order_id";
@@ -947,7 +1000,6 @@ namespace Smirnov_kursovaya.secondForm
 
                                 transaction.Commit();
 
-                                // Сообщение о количестве удаленных заказов
                                 if (orderIds.Count > 0)
                                 {
                                     MessageBox.Show($"Товар удален.\n" +
@@ -960,7 +1012,7 @@ namespace Smirnov_kursovaya.secondForm
                                         MessageBoxButtons.OK, MessageBoxIcon.Information);
                                 }
 
-                                LoadProducts();
+                                LoadProductsPage(1);
                             }
                             catch (Exception ex)
                             {
@@ -991,14 +1043,12 @@ namespace Smirnov_kursovaya.secondForm
             {
                 try
                 {
-                    // Загружаем изображение с использованием FileStream для снятия блокировки
                     Image selectedImage;
                     using (FileStream fs = new FileStream(openFileDialog.FileName, FileMode.Open, FileAccess.Read, FileShare.Read))
                     {
                         selectedImage = Image.FromStream(fs);
                     }
 
-                    // Масштабируем изображение до оптимального размера
                     int maxWidth = 150;
                     int maxHeight = 150;
 
@@ -1018,7 +1068,6 @@ namespace Smirnov_kursovaya.secondForm
 
                     selectedImage.Dispose();
 
-                    // Сохраняем изображение во временный файл
                     if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
                     {
                         DeleteImageFile(tempImagePath);
@@ -1027,7 +1076,6 @@ namespace Smirnov_kursovaya.secondForm
                     tempImagePath = SaveImageToTemp(resizedImage);
                     resizedImage.Dispose();
 
-                    // Загружаем изображение в PictureBox из временного файла
                     if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
                     {
                         LoadImageToPictureBox(tempImagePath);
@@ -1048,14 +1096,12 @@ namespace Smirnov_kursovaya.secondForm
         {
             if (readOnlyMode) return;
 
-            // Удаляем временный файл, если он есть
             if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
             {
                 DeleteImageFile(tempImagePath);
                 tempImagePath = null;
             }
 
-            // Очищаем PictureBox
             if (productPictureBox.Image != null)
             {
                 productPictureBox.Image.Dispose();
@@ -1076,7 +1122,6 @@ namespace Smirnov_kursovaya.secondForm
             descriptionTextBox.Clear();
             categoryComboBox.SelectedIndex = -1;
 
-            // Очищаем изображение
             if (productPictureBox.Image != null)
             {
                 productPictureBox.Image.Dispose();
@@ -1085,7 +1130,6 @@ namespace Smirnov_kursovaya.secondForm
             productPictureBox.Image = ImageHelper.Placeholder != null ?
                 (Image)ImageHelper.Placeholder.Clone() : null;
 
-            // Удаляем временный файл, если он есть
             if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
             {
                 DeleteImageFile(tempImagePath);
@@ -1101,7 +1145,6 @@ namespace Smirnov_kursovaya.secondForm
             currentProductId = 0;
             addButton.Text = "Добавить";
 
-            // Очищаем временный файл
             if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
             {
                 DeleteImageFile(tempImagePath);
@@ -1110,90 +1153,35 @@ namespace Smirnov_kursovaya.secondForm
             currentImagePathInDb = null;
         }
 
-        private void searchTextBox_TextChanged(object sender, EventArgs e)
-        {
-            string searchText = searchTextBox.Text;
-            if (searchText == "Поиск по названию...")
-                return;
-
-            foreach (DataGridViewRow row in productsDataGridView.Rows)
-            {
-                string name = row.Cells["name"].Value?.ToString() ?? "";
-                string article = row.Cells["article"].Value?.ToString() ?? "";
-
-                bool visible = name.ToLower().Contains(searchText.ToLower()) ||
-                              article.ToLower().Contains(searchText.ToLower());
-
-                row.Visible = visible;
-            }
-        }
-
-        private void sortButton_Click(object sender, EventArgs e)
-        {
-            // Сортировка по названию
-            productsDataGridView.Sort(productsDataGridView.Columns["name"],
-                System.ComponentModel.ListSortDirection.Ascending);
-        }
-
-        private void categoryFilterComboBox_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (categoryFilterComboBox.SelectedIndex > 0)
-            {
-                dynamic selectedCategory = categoryFilterComboBox.SelectedItem;
-                string categoryName = selectedCategory.Name;
-
-                foreach (DataGridViewRow row in productsDataGridView.Rows)
-                {
-                    string rowCategory = row.Cells["category_name"].Value?.ToString() ?? "";
-                    row.Visible = rowCategory == categoryName;
-                }
-            }
-            else
-            {
-                // Показываем все
-                foreach (DataGridViewRow row in productsDataGridView.Rows)
-                {
-                    row.Visible = true;
-                }
-            }
-        }
-
-        private void resetButton_Click(object sender, EventArgs e)
-        {
-            searchTextBox.Text = "Поиск по названию...";
-            searchTextBox.ForeColor = Color.Gray;
-            categoryFilterComboBox.SelectedIndex = 0;
-
-            foreach (DataGridViewRow row in productsDataGridView.Rows)
-            {
-                row.Visible = true;
-            }
-
-            productsDataGridView.ClearSelection();
-            ClearForm();
-            ResetFormMode();
-        }
-
-        private void menuButton_Click(object sender, EventArgs e)
-        {
-            this.Close();
-        }
-
         private void productsDataGridView_SelectionChanged(object sender, EventArgs e)
         {
             if (productsDataGridView.SelectedRows.Count > 0 && !isEditMode)
             {
                 DataGridViewRow selectedRow = productsDataGridView.SelectedRows[0];
 
-                // Показываем изображение в PictureBox
-                Image image = (Image)selectedRow.Cells["image"].Value;
-                if (image != null && image != ImageHelper.Placeholder)
+                if (selectedRow.Cells["image"].Value != null && selectedRow.Cells["image"].Value != DBNull.Value)
                 {
-                    if (productPictureBox.Image != null)
+                    try
                     {
-                        productPictureBox.Image.Dispose();
+                        byte[] imageData = (byte[])selectedRow.Cells["image"].Value;
+                        using (MemoryStream ms = new MemoryStream(imageData))
+                        {
+                            if (productPictureBox.Image != null)
+                            {
+                                productPictureBox.Image.Dispose();
+                            }
+                            productPictureBox.Image = Image.FromStream(ms);
+                        }
                     }
-                    productPictureBox.Image = image.Clone() as Image;
+                    catch
+                    {
+                        if (productPictureBox.Image != null)
+                        {
+                            productPictureBox.Image.Dispose();
+                        }
+                        productPictureBox.Image = ImageHelper.Placeholder != null ?
+                            (Image)ImageHelper.Placeholder.Clone() : null;
+                    }
                 }
                 else
                 {
@@ -1207,17 +1195,13 @@ namespace Smirnov_kursovaya.secondForm
             }
         }
 
-        // Валидация ввода
         private void nameTextBox_KeyPress(object sender, KeyPressEventArgs e)
         {
-            // Разрешаем все символы, кроме специальных управляющих
-            if (char.IsControl(e.KeyChar))
-                return;
+            // разрешаем все символы
         }
 
         private void articleTextBox_KeyPress(object sender, KeyPressEventArgs e)
         {
-            // Разрешаем только цифры
             if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar))
             {
                 e.Handled = true;
@@ -1226,29 +1210,24 @@ namespace Smirnov_kursovaya.secondForm
 
         private void priceTextBox_KeyPress(object sender, KeyPressEventArgs e)
         {
-            // Разрешаем только цифры, точку/запятую и Backspace
             if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar) && e.KeyChar != ',' && e.KeyChar != '.')
             {
                 e.Handled = true;
             }
 
-            // Заменяем запятую на точку
             if (e.KeyChar == ',')
             {
                 e.KeyChar = '.';
             }
 
-            // Проверяем, что точка только одна
             if ((e.KeyChar == '.') && ((sender as TextBox).Text.IndexOf('.') > -1))
             {
                 e.Handled = true;
             }
         }
 
-        // Обработчик закрытия формы для очистки временных файлов
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            // Удаляем временный файл, если он есть
             if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
             {
                 try
@@ -1258,7 +1237,6 @@ namespace Smirnov_kursovaya.secondForm
                 catch { }
             }
 
-            // Освобождаем изображение в PictureBox
             if (productPictureBox.Image != null)
             {
                 productPictureBox.Image.Dispose();
@@ -1268,23 +1246,17 @@ namespace Smirnov_kursovaya.secondForm
             base.OnFormClosing(e);
         }
 
-        // Обработчик изменения размера формы
         protected override void OnResize(EventArgs e)
         {
-
-            // Если мы в режиме продавца, обновляем размеры DataGridView
             if (readOnlyMode && productsDataGridView != null && groupBox1 != null && !groupBox1.Visible)
             {
-                // Обновляем позицию и размеры DataGridView
                 productsDataGridView.Top = categoryFilterComboBox.Bottom + 30;
                 productsDataGridView.Left = 10;
                 productsDataGridView.Width = this.ClientSize.Width - 20;
                 productsDataGridView.Height = this.ClientSize.Height - productsDataGridView.Top - 10;
             }
         }
-        private void groupBox1_Enter(object sender, EventArgs e)
-        {
 
-        }
+        private void groupBox1_Enter(object sender, EventArgs e) { }
     }
 }
