@@ -57,6 +57,7 @@
       <HintPath>bin\Debug\MySql.Data.dll</HintPath>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="System.Configuration" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
@@ -89,6 +90,12 @@
     </Compile>
     <Compile Include="mainForm\Auntification.Designer.cs">
       <DependentUpon>Auntification.cs</DependentUpon>
+    </Compile>
+    <Compile Include="secondForm\DbRestoreImportForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="secondForm\DbRestoreImportForm.Designer.cs">
+      <DependentUpon>DbRestoreImportForm.cs</DependentUpon>
     </Compile>
     <Compile Include="secondForm\NewOrder.cs">
       <SubType>Form</SubType>

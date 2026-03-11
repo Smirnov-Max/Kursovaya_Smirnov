@@ -9,6 +9,8 @@ using Kursovaya;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.Window;
 using System.Drawing;
 using System.IO;
+using System.Configuration;
+using Smirnov_kursovaya.secondForm;
 
 namespace Smirnov_kursovaya.mainForm
 {
@@ -142,24 +144,34 @@ namespace Smirnov_kursovaya.mainForm
                 return;
             }
 
+            // Читаем учётные данные администратора из App.config
+            string adminLogin = ConfigurationManager.AppSettings["AdminLogin"];
+            string adminPass = ConfigurationManager.AppSettings["AdminPassword"];
+
+            // Если введены admin/admin – открываем форму восстановления/импорта
+            if (username == adminLogin && password == adminPass)
+            {
+                DbRestoreImportForm restoreForm = new DbRestoreImportForm();
+                restoreForm.Show();
+                this.Hide();
+                return;
+            }
+
+            // Далее стандартная авторизация через БД
             try
             {
-                // Хешируем введенный пароль
                 string hashedPassword = HashPassword(password);
-
                 using (var connection = dbHelper.GetConnection())
                 {
                     connection.Open();
-
-                    string query = "SELECT u.*, r.name as RoleName FROM users u " +
-                                   "INNER JOIN roles r ON u.role_id = r.id " +
-                                   "WHERE u.login = @login AND u.password = @password";
-
+                    string query = @"SELECT u.*, r.name as RoleName 
+                             FROM users u 
+                             INNER JOIN roles r ON u.role_id = r.id 
+                             WHERE u.login = @login AND u.password = @password";
                     using (var command = new MySqlCommand(query, connection))
                     {
                         command.Parameters.AddWithValue("@login", username);
                         command.Parameters.AddWithValue("@password", hashedPassword);
-
                         using (var reader = command.ExecuteReader())
                         {
                             if (reader.Read())
@@ -167,7 +179,6 @@ namespace Smirnov_kursovaya.mainForm
                                 string role = reader["RoleName"].ToString();
                                 string userFio = reader["fio"].ToString();
 
-                                // Сохраняем информацию о пользователе для использования в других формах
                                 UserContext.CurrentUser = new UserInfo
                                 {
                                     Id = Convert.ToInt32(reader["id"]),
@@ -191,15 +202,16 @@ namespace Smirnov_kursovaya.mainForm
                                         sellerForm.Show();
                                         break;
                                     default:
-                                        MessageBox.Show("Неизвестная роль пользователя", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                        MessageBox.Show("Неизвестная роль пользователя", "Ошибка",
+                                            MessageBoxButtons.OK, MessageBoxIcon.Error);
                                         return;
                                 }
-
                                 this.Hide();
                             }
                             else
                             {
-                                MessageBox.Show("Неверный логин или пароль", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                MessageBox.Show("Неверный логин или пароль", "Ошибка",
+                                    MessageBoxButtons.OK, MessageBoxIcon.Error);
                                 usernameTextBox.Clear();
                                 passwordTextBox.Clear();
                                 usernameTextBox.Focus();
@@ -210,7 +222,8 @@ namespace Smirnov_kursovaya.mainForm
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка авторизации: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Ошибка авторизации: {ex.Message}", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
