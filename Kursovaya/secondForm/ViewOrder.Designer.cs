@@ -36,6 +36,7 @@
         private System.Windows.Forms.Label label10;
         private System.Windows.Forms.Label label11;
         private System.Windows.Forms.ComboBox discountComboBox;
+        private System.Windows.Forms.Button btnClientDetails;
 
         protected override void Dispose(bool disposing)
         {
@@ -57,6 +58,7 @@
             this.searchLabel = new System.Windows.Forms.Label();
             this.refreshButton = new System.Windows.Forms.Button();
             this.orderDetailsPanel = new System.Windows.Forms.Panel();
+            this.btnClientDetails = new System.Windows.Forms.Button();
             this.label11 = new System.Windows.Forms.Label();
             this.label10 = new System.Windows.Forms.Label();
             this.label9 = new System.Windows.Forms.Label();
@@ -175,6 +177,7 @@
             | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.orderDetailsPanel.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.orderDetailsPanel.Controls.Add(this.btnClientDetails);
             this.orderDetailsPanel.Controls.Add(this.label11);
             this.orderDetailsPanel.Controls.Add(this.label10);
             this.orderDetailsPanel.Controls.Add(this.label9);
@@ -205,6 +208,21 @@
             this.orderDetailsPanel.Size = new System.Drawing.Size(860, 270);
             this.orderDetailsPanel.TabIndex = 5;
             this.orderDetailsPanel.Visible = false;
+            // 
+            // btnClientDetails
+            // 
+            this.btnClientDetails.BackColor = System.Drawing.Color.Coral;
+            this.btnClientDetails.FlatAppearance.BorderColor = System.Drawing.Color.Gray;
+            this.btnClientDetails.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnClientDetails.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(204)));
+            this.btnClientDetails.ForeColor = System.Drawing.Color.Black;
+            this.btnClientDetails.Location = new System.Drawing.Point(140, 235);
+            this.btnClientDetails.Name = "btnClientDetails";
+            this.btnClientDetails.Size = new System.Drawing.Size(150, 30);
+            this.btnClientDetails.TabIndex = 17;
+            this.btnClientDetails.Text = "Подробнее о клиенте";
+            this.btnClientDetails.UseVisualStyleBackColor = false;
+            this.btnClientDetails.Click += new System.EventHandler(this.btnClientDetails_Click);
             // 
             // label11
             // 

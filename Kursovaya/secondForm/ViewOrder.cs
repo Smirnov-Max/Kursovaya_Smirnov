@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Data;
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
 using Smirnov_kursovaya.Database;
+using Smirnov_kursovaya.mainForm;
 
 namespace Smirnov_kursovaya.secondForm
 {
@@ -12,6 +14,7 @@ namespace Smirnov_kursovaya.secondForm
         private DatabaseHelper dbHelper;
         private bool isManagerMode;
         private int selectedOrderId = 0;
+        private int currentClientId = 0;
 
         // Конструктор для менеджера/продавца (список заказов)
         public ViewOrderForm(bool isManagerMode = false)
@@ -44,8 +47,8 @@ namespace Smirnov_kursovaya.secondForm
                 statusComboBox.Enabled = true;
                 applyDiscountButton.Visible = true;
                 discountComboBox.Enabled = true;
+                btnClientDetails.Visible = false;
 
-                // Загружаем статусы для выпадающего списка
                 LoadStatuses();
             }
             else
@@ -55,58 +58,48 @@ namespace Smirnov_kursovaya.secondForm
                 statusComboBox.Enabled = false;
                 applyDiscountButton.Visible = false;
                 discountComboBox.Enabled = false;
+                btnClientDetails.Visible = true;
             }
 
-            // Заполняем комбобокс скидок
             discountComboBox.Items.Clear();
             discountComboBox.Items.AddRange(new object[] { "0%", "5%", "10%", "15%", "20%" });
             discountComboBox.SelectedIndex = 0;
 
-            // Настраиваем DataGridView для списка заказов
+            // Настройка DataGridView для списка заказов
             ordersDataGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             ordersDataGridView.ReadOnly = true;
             ordersDataGridView.RowHeadersVisible = false;
 
-            // Настройка стиля сетки
             ordersDataGridView.GridColor = Color.LightGray;
             ordersDataGridView.CellBorderStyle = DataGridViewCellBorderStyle.Single;
 
-            // Устанавливаем чередование цветов строк
-            ordersDataGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 240, 255); // Очень светлый фиолетовый
+            ordersDataGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 240, 255);
+            ordersDataGridView.DefaultCellStyle.SelectionBackColor = Color.FromArgb(230, 210, 250);
+            ordersDataGridView.DefaultCellStyle.SelectionForeColor = Color.Black;
 
-            // Цвет выделенной строки - очень светлый фиолетовый
-            ordersDataGridView.DefaultCellStyle.SelectionBackColor = Color.FromArgb(230, 210, 250); // Светлый фиолетовый для выделения
-            ordersDataGridView.DefaultCellStyle.SelectionForeColor = Color.Black; // Черный текст для контраста
-
-            // Цвет заголовков
-            ordersDataGridView.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(255, 127, 80); // Coral цвет
+            ordersDataGridView.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(255, 127, 80);
             ordersDataGridView.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
             ordersDataGridView.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
             ordersDataGridView.ColumnHeadersHeight = 40;
-            ordersDataGridView.EnableHeadersVisualStyles = false; // Отключаем стандартные стили Windows
+            ordersDataGridView.EnableHeadersVisualStyles = false;
 
-            // Настраиваем DataGridView для товаров заказа
+            // Настройка DataGridView для товаров заказа
             orderItemsDataGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             orderItemsDataGridView.ReadOnly = true;
             orderItemsDataGridView.RowHeadersVisible = false;
 
-            // Настройка стиля сетки
             orderItemsDataGridView.GridColor = Color.LightGray;
             orderItemsDataGridView.CellBorderStyle = DataGridViewCellBorderStyle.Single;
 
-            // Устанавливаем чередование цветов строк
-            orderItemsDataGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 240, 255); // Очень светлый фиолетовый
+            orderItemsDataGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 240, 255);
+            orderItemsDataGridView.DefaultCellStyle.SelectionBackColor = Color.FromArgb(230, 210, 250);
+            orderItemsDataGridView.DefaultCellStyle.SelectionForeColor = Color.Black;
 
-            // Цвет выделенной строки - очень светлый фиолетовый
-            orderItemsDataGridView.DefaultCellStyle.SelectionBackColor = Color.FromArgb(230, 210, 250); // Светлый фиолетовый для выделения
-            orderItemsDataGridView.DefaultCellStyle.SelectionForeColor = Color.Black; // Черный текст для контраста
-
-            // Цвет заголовков
-            orderItemsDataGridView.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(255, 127, 80); // Coral цвет
+            orderItemsDataGridView.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(255, 127, 80);
             orderItemsDataGridView.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
             orderItemsDataGridView.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
             orderItemsDataGridView.ColumnHeadersHeight = 40;
-            orderItemsDataGridView.EnableHeadersVisualStyles = false; // Отключаем стандартные стили Windows
+            orderItemsDataGridView.EnableHeadersVisualStyles = false;
 
             foreach (Control control in this.Controls)
             {
@@ -121,21 +114,17 @@ namespace Smirnov_kursovaya.secondForm
                 }
             }
 
-            // Устанавливаем стиль
             ApplyCoralButtonStyle();
-
         }
 
         private void ApplyCoralButtonStyle()
         {
-            Color coralColor = Color.FromArgb(255, 127, 80); // Coral цвет
-            Color coralLightColor = Color.FromArgb(255, 147, 100); // Светлее для hover
-            Color coralDarkColor = Color.FromArgb(235, 107, 60); // Темнее для нажатия
+            Color coralColor = Color.FromArgb(255, 127, 80);
+            Color coralLightColor = Color.FromArgb(255, 147, 100);
+            Color coralDarkColor = Color.FromArgb(235, 107, 60);
 
-            // Рекурсивно применяем стиль ко всем кнопкам
             ApplyStyleToAllButtons(this, coralColor, coralLightColor, coralDarkColor);
 
-            // Особый стиль для кнопки меню (можно сделать другого цвета)
             if (menuButton != null)
             {
                 ApplyMenuButtonStyle();
@@ -146,12 +135,10 @@ namespace Smirnov_kursovaya.secondForm
         {
             foreach (Control control in parent.Controls)
             {
-                // Если это кнопка - применяем стиль
-                if (control is Button button && button != menuButton) // Исключаем кнопку меню
+                if (control is Button button && button != menuButton)
                 {
                     ApplyButtonStyle(button, normalColor, hoverColor, pressedColor);
                 }
-                // Если это контейнер - рекурсивно обрабатываем его содержимое
                 else if (control.HasChildren)
                 {
                     ApplyStyleToAllButtons(control, normalColor, hoverColor, pressedColor);
@@ -168,71 +155,39 @@ namespace Smirnov_kursovaya.secondForm
             button.ForeColor = Color.Black;
             button.Font = new Font(button.Font, FontStyle.Regular);
 
-            // Убираем старые обработчики
-            button.MouseEnter -= (s, e) => { };
-            button.MouseLeave -= (s, e) => { };
-            button.MouseDown -= (s, e) => { };
-            button.MouseUp -= (s, e) => { };
-
-            // Добавляем новые обработчики
-            button.MouseEnter += (s, e) => {
-                button.BackColor = hoverColor;
-            };
-            button.MouseLeave += (s, e) => {
-                button.BackColor = normalColor;
-            };
-            button.MouseDown += (s, e) => {
-                button.BackColor = pressedColor;
-            };
-            button.MouseUp += (s, e) => {
-                button.BackColor = hoverColor;
-            };
+            button.MouseEnter += (s, e) => { button.BackColor = hoverColor; };
+            button.MouseLeave += (s, e) => { button.BackColor = normalColor; };
+            button.MouseDown += (s, e) => { button.BackColor = pressedColor; };
+            button.MouseUp += (s, e) => { button.BackColor = hoverColor; };
         }
 
         private void ApplyMenuButtonStyle()
         {
-            menuButton.BackColor = Color.Red; // Cornflower Blue
+            menuButton.BackColor = Color.Red;
             menuButton.FlatStyle = FlatStyle.Flat;
             menuButton.FlatAppearance.BorderColor = Color.DarkRed;
             menuButton.FlatAppearance.BorderSize = 1;
             menuButton.ForeColor = Color.Black;
             menuButton.Font = new Font(menuButton.Font, FontStyle.Regular);
 
-            // Убираем старые обработчики и добавляем новые
-            menuButton.MouseEnter -= (s, e) => { };
-            menuButton.MouseLeave -= (s, e) => { };
-            menuButton.MouseDown -= (s, e) => { };
-            menuButton.MouseUp -= (s, e) => { };
-
-            menuButton.MouseEnter += (s, e) => {
-                menuButton.BackColor = Color.IndianRed;
-            };
-            menuButton.MouseLeave += (s, e) => {
-                menuButton.BackColor = Color.Red;
-            };
-            menuButton.MouseDown += (s, e) => {
-                menuButton.BackColor = Color.OrangeRed;
-            };
-            menuButton.MouseUp += (s, e) => {
-                menuButton.BackColor = Color.OrangeRed;
-            };
+            menuButton.MouseEnter += (s, e) => { menuButton.BackColor = Color.IndianRed; };
+            menuButton.MouseLeave += (s, e) => { menuButton.BackColor = Color.Red; };
+            menuButton.MouseDown += (s, e) => { menuButton.BackColor = Color.OrangeRed; };
+            menuButton.MouseUp += (s, e) => { menuButton.BackColor = Color.OrangeRed; };
         }
 
         private void ShowSingleOrderMode(int orderId)
         {
-            // Скрываем элементы для списка заказов
             ordersDataGridView.Visible = false;
             searchOrderTextBox.Visible = false;
             searchLabel.Visible = false;
             refreshButton.Visible = false;
 
-            // Показываем панель деталей на всю форму
             orderDetailsPanel.Visible = true;
             orderDetailsPanel.Dock = DockStyle.Fill;
             orderDetailsPanel.Location = new System.Drawing.Point(0, 60);
             orderDetailsPanel.Size = new System.Drawing.Size(884, 511);
 
-            // Загружаем детали заказа
             LoadOrderDetails(orderId);
         }
 
@@ -264,7 +219,6 @@ namespace Smirnov_kursovaya.secondForm
 
                         ordersDataGridView.DataSource = dt;
 
-                        // Автоматически выбираем первую строку
                         if (ordersDataGridView.Rows.Count > 0)
                         {
                             ordersDataGridView.Rows[0].Selected = true;
@@ -292,6 +246,36 @@ namespace Smirnov_kursovaya.secondForm
             }
         }
 
+        // ---- Методы маскировки ----
+
+        private string MaskPhone(string phone)
+        {
+            if (string.IsNullOrEmpty(phone)) return "***";
+            string digits = new string(phone.Where(char.IsDigit).ToArray());
+            if (digits.Length < 4) return "***";
+            return new string('*', digits.Length - 4) + digits.Substring(digits.Length - 4);
+        }
+
+        private string MaskFIO(string fio)
+        {
+            if (string.IsNullOrEmpty(fio)) return "***";
+            var parts = fio.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (parts[i].Length >= 3)
+                {
+                    parts[i] = parts[i].Substring(0, 3) + new string('*', parts[i].Length - 3);
+                }
+                else
+                {
+                    parts[i] = parts[i] + new string('*', 3 - parts[i].Length);
+                }
+            }
+            return string.Join(" ", parts);
+        }
+
+        // ---------------------------
+
         private void LoadOrderDetails(int orderId)
         {
             try
@@ -309,6 +293,7 @@ namespace Smirnov_kursovaya.secondForm
                             o.total_amount,
                             o.final_amount,
                             o.notes,
+                            c.id as client_id,
                             c.fio as client_name,
                             c.phone,
                             s.name as status_name,
@@ -325,15 +310,25 @@ namespace Smirnov_kursovaya.secondForm
                         {
                             if (reader.Read())
                             {
-                                // Обновляем информацию о заказе
+                                currentClientId = Convert.ToInt32(reader["client_id"]);
+
                                 orderNumberLabel.Text = reader["order_number"]?.ToString() ?? "Не указан";
                                 orderDateLabel.Text = reader["date_of_creation"]?.ToString() ?? "Не указана";
                                 completionDateLabel.Text = reader["date_of_completion"]?.ToString() ?? "Не установлена";
-                                clientNameLabel.Text = reader["client_name"]?.ToString() ?? "Не указан";
-                                clientPhoneLabel.Text = reader["phone"]?.ToString() ?? "Не указан";
+
+                                if (isManagerMode)
+                                {
+                                    clientNameLabel.Text = reader["client_name"]?.ToString() ?? "Не указан";
+                                    clientPhoneLabel.Text = reader["phone"]?.ToString() ?? "Не указан";
+                                }
+                                else
+                                {
+                                    clientNameLabel.Text = MaskFIO(reader["client_name"]?.ToString() ?? "Не указан");
+                                    clientPhoneLabel.Text = MaskPhone(reader["phone"]?.ToString() ?? "Не указан");
+                                }
+
                                 statusLabel.Text = reader["status_name"]?.ToString() ?? "Не указан";
 
-                                // Суммы и скидки
                                 decimal totalAmount = reader["total_amount"] != DBNull.Value ?
                                     Convert.ToDecimal(reader["total_amount"]) : 0;
                                 decimal finalAmount = reader["final_amount"] != DBNull.Value ?
@@ -345,23 +340,21 @@ namespace Smirnov_kursovaya.secondForm
                                 decimal discountAmount = totalAmount - finalAmount;
                                 discountLabel.Text = discountAmount.ToString("C2");
 
-                                // Устанавливаем текущую скидку в ComboBox
                                 if (reader["discount"] != DBNull.Value)
                                 {
                                     string discountStr = reader["discount"].ToString().Replace("%", "");
                                     if (int.TryParse(discountStr, out int discountValue))
                                     {
-                                        int index = discountValue / 5; // 0%, 5%, 10%, 15%, 20%
+                                        int index = discountValue / 5;
                                         if (index >= 0 && index < discountComboBox.Items.Count)
                                             discountComboBox.SelectedIndex = index;
                                     }
                                 }
                                 else
                                 {
-                                    discountComboBox.SelectedIndex = 0; // 0% по умолчанию
+                                    discountComboBox.SelectedIndex = 0;
                                 }
 
-                                // Устанавливаем статус в ComboBox
                                 int statusId = reader["status_id"] != DBNull.Value ?
                                     Convert.ToInt32(reader["status_id"]) : 0;
 
@@ -381,7 +374,6 @@ namespace Smirnov_kursovaya.secondForm
                         }
                     }
 
-                    // Загружаем товары заказа
                     LoadOrderItems(orderId);
                 }
             }
@@ -418,7 +410,6 @@ namespace Smirnov_kursovaya.secondForm
 
                         orderItemsDataGridView.DataSource = dt;
 
-                        // Форматируем столбцы с суммами
                         if (orderItemsDataGridView.Columns.Contains("Цена"))
                         {
                             orderItemsDataGridView.Columns["Цена"].DefaultCellStyle.Format = "C2";
@@ -505,7 +496,6 @@ namespace Smirnov_kursovaya.secondForm
                             MessageBox.Show("Статус заказа успешно обновлен", "Успех",
                                 MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-                            // Обновляем данные
                             if (ordersDataGridView.Visible)
                                 LoadAllOrders();
                             else
@@ -539,20 +529,16 @@ namespace Smirnov_kursovaya.secondForm
 
             try
             {
-                // Получаем выбранную скидку из комбобокса
                 string discountText = discountComboBox.SelectedItem.ToString();
                 discountText = discountText.Replace("%", "");
                 decimal discount = decimal.Parse(discountText);
 
-                // Получаем текущую сумму заказа из метки
                 string subtotalText = subtotalLabel.Text.Replace("₽", "").Replace("$", "").Replace(" ", "").Replace("руб", "");
                 decimal totalAmount = decimal.Parse(subtotalText);
 
-                // Рассчитываем новую сумму со скидкой
                 decimal discountAmount = totalAmount * (discount / 100);
                 decimal finalAmount = totalAmount - discountAmount;
 
-                // Обновляем заказ в базе данных
                 using (var connection = dbHelper.GetConnection())
                 {
                     connection.Open();
@@ -572,11 +558,9 @@ namespace Smirnov_kursovaya.secondForm
                         MessageBox.Show($"Скидка {discount}% успешно применена", "Успех",
                             MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-                        // Обновляем отображение на форме
                         discountLabel.Text = discountAmount.ToString("C2");
                         totalLabel.Text = finalAmount.ToString("C2");
 
-                        // Обновляем список заказов если он видим
                         if (ordersDataGridView.Visible)
                             LoadAllOrders();
                         else
@@ -598,7 +582,6 @@ namespace Smirnov_kursovaya.secondForm
 
         private void ViewOrderForm_Load(object sender, EventArgs e)
         {
-            // Загружаем статусы для менеджера
             if (isManagerMode)
             {
                 LoadStatuses();
@@ -607,7 +590,6 @@ namespace Smirnov_kursovaya.secondForm
 
         private void searchOrderTextBox_TextChanged(object sender, EventArgs e)
         {
-            // Поиск по таблице заказов
             if (ordersDataGridView.DataSource is DataTable dt)
             {
                 string searchText = searchOrderTextBox.Text.ToLower();
@@ -626,7 +608,6 @@ namespace Smirnov_kursovaya.secondForm
             }
         }
 
-        // Метод для генерации содержимого чека
         private string GenerateReceiptContent()
         {
             string itemsText = "";
@@ -637,7 +618,6 @@ namespace Smirnov_kursovaya.secondForm
                     string productName = row["Товар"]?.ToString() ?? "Неизвестный товар";
                     string quantity = row["Количество"]?.ToString() ?? "0";
 
-                    // Пытаемся получить цену и сумму
                     decimal price = 0;
                     decimal total = 0;
 
@@ -683,7 +663,6 @@ namespace Smirnov_kursovaya.secondForm
 ====================";
         }
 
-        // Метод для печати чека
         private void PrintReceipt()
         {
             try
@@ -697,7 +676,6 @@ namespace Smirnov_kursovaya.secondForm
 
                 string receiptContent = GenerateReceiptContent();
 
-                // Создаем диалог сохранения файла
                 SaveFileDialog saveFileDialog = new SaveFileDialog();
                 saveFileDialog.Filter = "Текстовые файлы (*.txt)|*.txt";
                 saveFileDialog.FileName = $"Чек_заказа_{orderNumberLabel.Text.Replace(" ", "_")}_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
@@ -706,14 +684,11 @@ namespace Smirnov_kursovaya.secondForm
 
                 if (saveFileDialog.ShowDialog() == DialogResult.OK)
                 {
-                    // Сохраняем чек в файл
                     System.IO.File.WriteAllText(saveFileDialog.FileName, receiptContent, System.Text.Encoding.UTF8);
 
-                    // Показываем сообщение об успешном сохранении
                     MessageBox.Show($"Чек успешно сохранен в файл:\n{saveFileDialog.FileName}", "Чек сохранен",
                         MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-                    // Опционально: открываем файл для просмотра
                     if (MessageBox.Show("Открыть чек для просмотра?", "Просмотр чека",
                         MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                     {
@@ -743,6 +718,52 @@ namespace Smirnov_kursovaya.secondForm
         private void menuButton_Click(object sender, EventArgs e)
         {
             this.Close();
+        }
+
+        private void btnClientDetails_Click(object sender, EventArgs e)
+        {
+            if (currentClientId == 0)
+            {
+                MessageBox.Show("Клиент не выбран", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            try
+            {
+                using (var connection = dbHelper.GetConnection())
+                {
+                    connection.Open();
+                    string query = "SELECT fio, phone FROM clients WHERE id = @id";
+                    using (var cmd = new MySqlCommand(query, connection))
+                    {
+                        cmd.Parameters.AddWithValue("@id", currentClientId);
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            if (reader.Read())
+                            {
+                                string fio = reader["fio"].ToString();
+                                string phone = reader["phone"].ToString();
+
+                                MessageBox.Show(
+                                    $"ФИО: {fio}\nТелефон: {phone}",
+                                    "Полные данные клиента",
+                                    MessageBoxButtons.OK,
+                                    MessageBoxIcon.Information
+                                );
+                            }
+                            else
+                            {
+                                MessageBox.Show("Клиент не найден", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка загрузки данных клиента: {ex.Message}", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
     }
 }
