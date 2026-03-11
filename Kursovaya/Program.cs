@@ -1,4 +1,5 @@
-﻿using Smirnov_kursovaya.mainForm;
+﻿using Smirnov_kursovaya.Helpers;
+using Smirnov_kursovaya.mainForm;
 using System;
 using System.Windows.Forms;
 
@@ -14,6 +15,10 @@ namespace Kursovaya
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            // Запускаем трекер бездействия
+            InactivityTracker.Start();
+            Application.Run(new Authentication());
+            Application.EnableVisualStyles();
 
             // Проверка подключения к базе данных
             try

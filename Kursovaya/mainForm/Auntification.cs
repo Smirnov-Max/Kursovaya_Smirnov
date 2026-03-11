@@ -63,6 +63,26 @@ namespace Smirnov_kursovaya.mainForm
             this.Load += (s, e) => ApplyCoralButtonStyle();
         }
 
+        public void ClearInputFields()
+        {
+            usernameTextBox.Text = "";
+            passwordTextBox.Text = "";
+
+            // Сброс капчи
+            if (txtCaptcha != null)
+                txtCaptcha.Text = "";
+
+            // Сброс счётчика попыток и скрытие капчи
+            failedAttempts = 0;
+            isCaptchaVisible = false;
+            if (pictureBoxCaptcha != null)
+            {
+                pictureBoxCaptcha.Visible = false;
+                txtCaptcha.Visible = false;
+                btnRefreshCaptcha.Visible = false;
+            }
+        }
+
         // CAPTCHA: инициализация элементов управления капчи и таймера
         private void InitializeCaptchaControls()
         {

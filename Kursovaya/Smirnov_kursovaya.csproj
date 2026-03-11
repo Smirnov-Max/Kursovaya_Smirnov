@@ -70,6 +70,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="InactivityTracker.cs" />
     <Compile Include="CaptchaGenerator.cs" />
     <Compile Include="ImageHelper.cs" />
     <Compile Include="Models.cs" />
