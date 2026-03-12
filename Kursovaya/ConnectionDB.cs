@@ -115,6 +115,8 @@ namespace Smirnov_kursovaya.Database
         /// <summary>
         /// Импортирует данные из CSV-файла в указанную таблицу.
         /// Разделитель по умолчанию — точка с запятой.
+        /// Файл должен содержать все поля таблицы, включая id (в порядке, определённом в БД).
+        /// Использует INSERT IGNORE для пропуска строк с дублирующимся id.
         /// </summary>
         /// <returns>Количество успешно импортированных записей</returns>
         public int ImportCsv(string tableName, string filePath, char delimiter = ';')
@@ -126,8 +128,9 @@ namespace Smirnov_kursovaya.Database
             if (lines.Length == 0)
                 return 0;
 
-            int columnCount = GetColumnCount(tableName);
-            var columnNames = GetColumnNames(tableName);
+            // Получаем все колонки таблицы (включая id)
+            var allColumnNames = GetColumnNames(tableName);
+            int columnCount = allColumnNames.Count;
             int imported = 0;
 
             using (var conn = GetConnection())
@@ -146,9 +149,10 @@ namespace Smirnov_kursovaya.Database
                             if (values.Length != columnCount)
                                 throw new Exception($"Несоответствие числа столбцов: ожидалось {columnCount}, получено {values.Length} в строке: {line}");
 
-                            string cols = string.Join(",", columnNames);
+                            string cols = string.Join(",", allColumnNames);
                             string placeholders = string.Join(",", values.Select((_, i) => "@p" + i));
-                            string query = $"INSERT INTO {tableName} ({cols}) VALUES ({placeholders})";
+                            // Используем INSERT IGNORE, чтобы пропускать дубликаты без ошибки
+                            string query = $"INSERT IGNORE INTO {tableName} ({cols}) VALUES ({placeholders})";
 
                             using (var cmd = new MySqlCommand(query, conn, transaction))
                             {

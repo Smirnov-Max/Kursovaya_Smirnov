@@ -4,6 +4,9 @@ using System.Drawing;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
 using Smirnov_kursovaya.Database;
+using System.IO;
+using System.Text;
+using System.Collections.Generic;
 
 namespace Smirnov_kursovaya.secondForm
 {
@@ -75,6 +78,105 @@ namespace Smirnov_kursovaya.secondForm
                             dgv.Columns["id"].Visible = false;
                         }
                     };
+                }
+            }
+        }
+
+        private void btnExportAll_Click(object sender, EventArgs e)
+        {
+            using (var folderDialog = new FolderBrowserDialog())
+            {
+                folderDialog.Description = "Выберите папку для сохранения CSV-файлов";
+                folderDialog.ShowNewFolderButton = true;
+                if (folderDialog.ShowDialog() == DialogResult.OK)
+                {
+                    string folderPath = folderDialog.SelectedPath;
+                    ExportAllTablesToCsv(folderPath);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Экспортирует все таблицы из базы данных в CSV-файлы.
+        /// Каждая таблица сохраняется в отдельный файл с именем <имя_таблицы>.csv.
+        /// </summary>
+        private void ExportAllTablesToCsv(string folderPath)
+        {
+            var tables = dbHelper.GetTableList();
+            int success = 0;
+            int failed = 0;
+            var errors = new List<string>();
+
+            foreach (string table in tables)
+            {
+                try
+                {
+                    string filePath = Path.Combine(folderPath, table + ".csv");
+                    ExportTableToCsv(table, filePath);
+                    success++;
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    errors.Add($"Ошибка экспорта таблицы {table}: {ex.Message}");
+                }
+            }
+
+            string message = $"Экспорт завершен.\nУспешно экспортировано таблиц: {success}\nОшибок: {failed}";
+            if (errors.Count > 0)
+            {
+                message += "\n\nДетали ошибок:\n" + string.Join("\n", errors);
+            }
+            MessageBox.Show(message, "Результат экспорта", MessageBoxButtons.OK, errors.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+        }
+
+        /// <summary>
+        /// Экспортирует одну таблицу в CSV-файл.
+        /// </summary>
+        private void ExportTableToCsv(string tableName, string filePath)
+        {
+            using (var conn = dbHelper.GetConnection())
+            {
+                conn.Open();
+                string query = $"SELECT * FROM {tableName}";
+                using (var cmd = new MySqlCommand(query, conn))
+                using (var adapter = new MySqlDataAdapter(cmd))
+                {
+                    DataTable dt = new DataTable();
+                    adapter.Fill(dt);
+
+                    using (StreamWriter sw = new StreamWriter(filePath, false, Encoding.UTF8))
+                    {
+                        // Запись заголовков столбцов
+                        for (int i = 0; i < dt.Columns.Count; i++)
+                        {
+                            sw.Write(dt.Columns[i].ColumnName);
+                            if (i < dt.Columns.Count - 1)
+                                sw.Write(";");
+                        }
+                        sw.WriteLine();
+
+                        // Запись строк данных
+                        foreach (DataRow row in dt.Rows)
+                        {
+                            for (int i = 0; i < dt.Columns.Count; i++)
+                            {
+                                object value = row[i];
+                                string strValue = value == DBNull.Value ? "" : value.ToString();
+
+                                // Экранирование, если значение содержит разделитель или кавычки
+                                if (strValue.Contains(";") || strValue.Contains("\"") || strValue.Contains("\n"))
+                                {
+                                    strValue = "\"" + strValue.Replace("\"", "\"\"") + "\"";
+                                }
+
+                                sw.Write(strValue);
+                                if (i < dt.Columns.Count - 1)
+                                    sw.Write(";");
+                            }
+                            sw.WriteLine();
+                        }
+                    }
                 }
             }
         }
