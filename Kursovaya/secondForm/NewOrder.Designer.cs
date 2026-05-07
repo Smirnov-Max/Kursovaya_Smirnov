@@ -34,10 +34,6 @@
         private System.Windows.Forms.Label label11;
         private System.Windows.Forms.Label label12;
         private System.Windows.Forms.Button clearCartButton;
-        private System.Windows.Forms.Label orderNumberLabel;
-        private System.Windows.Forms.Label orderNumberValueLabel;
-        private System.Windows.Forms.Button clientsButton;
-        private System.Windows.Forms.Label clientInfoLabel;
 
         protected override void Dispose(bool disposing)
         {
@@ -83,10 +79,6 @@
             this.label11 = new System.Windows.Forms.Label();
             this.label12 = new System.Windows.Forms.Label();
             this.clearCartButton = new System.Windows.Forms.Button();
-            this.orderNumberLabel = new System.Windows.Forms.Label();
-            this.orderNumberValueLabel = new System.Windows.Forms.Label();
-            this.clientsButton = new System.Windows.Forms.Button();
-            this.clientInfoLabel = new System.Windows.Forms.Label();
             this.panel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.productsDataGridView)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.cartDataGridView)).BeginInit();
@@ -131,44 +123,24 @@
             this.label1.Text = "Новый заказ";
             this.label1.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             // 
-            // orderNumberLabel
-            // 
-            this.orderNumberLabel.AutoSize = true;
-            this.orderNumberLabel.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(204)));
-            this.orderNumberLabel.Location = new System.Drawing.Point(340, 65);
-            this.orderNumberLabel.Name = "orderNumberLabel";
-            this.orderNumberLabel.Size = new System.Drawing.Size(100, 15);
-            this.orderNumberLabel.TabIndex = 31;
-            this.orderNumberLabel.Text = "№ заказа:";
-            // 
-            // orderNumberValueLabel
-            // 
-            this.orderNumberValueLabel.AutoSize = true;
-            this.orderNumberValueLabel.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(204)));
-            this.orderNumberValueLabel.Location = new System.Drawing.Point(420, 65);
-            this.orderNumberValueLabel.Name = "orderNumberValueLabel";
-            this.orderNumberValueLabel.Size = new System.Drawing.Size(60, 15);
-            this.orderNumberValueLabel.TabIndex = 32;
-            this.orderNumberValueLabel.Text = "000000";
-            // 
             // label2
             // 
             this.label2.AutoSize = true;
-            this.label2.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(204)));
-            this.label2.Location = new System.Drawing.Point(12, 68);
+            this.label2.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(204)));
+            this.label2.Location = new System.Drawing.Point(12, 84);
             this.label2.Name = "label2";
-            this.label2.Size = new System.Drawing.Size(60, 13);
+            this.label2.Size = new System.Drawing.Size(46, 13);
             this.label2.TabIndex = 1;
-            this.label2.Text = "Клиенты:";
+            this.label2.Text = "Клиент:";
             // 
             // clientComboBox
             // 
             this.clientComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.clientComboBox.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(204)));
             this.clientComboBox.FormattingEnabled = true;
-            this.clientComboBox.Location = new System.Drawing.Point(12, 118);
+            this.clientComboBox.Location = new System.Drawing.Point(70, 107);
             this.clientComboBox.Name = "clientComboBox";
-            this.clientComboBox.Size = new System.Drawing.Size(300, 21);
+            this.clientComboBox.Size = new System.Drawing.Size(250, 21);
             this.clientComboBox.TabIndex = 2;
             // 
             // label3
@@ -448,7 +420,7 @@
             this.label9.Name = "label9";
             this.label9.Size = new System.Drawing.Size(179, 13);
             this.label9.TabIndex = 24;
-            this.label9.Text = "Поиск по названию:";
+            this.label9.Text = "Поиск по названию или артикулу:";
             // 
             // label10
             // 
@@ -461,31 +433,6 @@
             this.label10.TabIndex = 25;
             this.label10.Text = "Корзина";
             // 
-            // clientsButton
-            // 
-            this.clientsButton.BackColor = System.Drawing.Color.Coral;
-            this.clientsButton.FlatAppearance.BorderColor = System.Drawing.Color.Gray;
-            this.clientsButton.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.clientsButton.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(204)));
-            this.clientsButton.ForeColor = System.Drawing.Color.Black;
-            this.clientsButton.Location = new System.Drawing.Point(12, 84);
-            this.clientsButton.Name = "clientsButton";
-            this.clientsButton.Size = new System.Drawing.Size(100, 30);
-            this.clientsButton.TabIndex = 33;
-            this.clientsButton.Text = "Клиенты";
-            this.clientsButton.UseVisualStyleBackColor = false;
-            this.clientsButton.Click += new System.EventHandler(this.clientsButton_Click);
-            // 
-            // clientInfoLabel
-            // 
-            this.clientInfoLabel.AutoSize = true;
-            this.clientInfoLabel.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(204)));
-            this.clientInfoLabel.Location = new System.Drawing.Point(118, 92);
-            this.clientInfoLabel.Name = "clientInfoLabel";
-            this.clientInfoLabel.Size = new System.Drawing.Size(120, 13);
-            this.clientInfoLabel.TabIndex = 34;
-            this.clientInfoLabel.Text = "Клиент не выбран";
-            // 
             // searchClientTextBox
             // 
             this.searchClientTextBox.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(204)));
@@ -493,7 +440,9 @@
             this.searchClientTextBox.Name = "searchClientTextBox";
             this.searchClientTextBox.Size = new System.Drawing.Size(250, 20);
             this.searchClientTextBox.TabIndex = 26;
-            this.searchClientTextBox.Visible = false;
+            this.searchClientTextBox.TextChanged += new System.EventHandler(this.searchClientTextBox_TextChanged);
+            this.searchClientTextBox.Enter += new System.EventHandler(this.searchClientTextBox_Enter);
+            this.searchClientTextBox.Leave += new System.EventHandler(this.searchClientTextBox_Leave);
             // 
             // label11
             // 
@@ -503,7 +452,7 @@
             this.label11.Name = "label11";
             this.label11.Size = new System.Drawing.Size(57, 13);
             this.label11.TabIndex = 27;
-            this.label11.Visible = false;
+            this.label11.Text = "Поиск по:";
             // 
             // label12
             // 
@@ -537,10 +486,6 @@
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(884, 651);
-            this.Controls.Add(this.clientInfoLabel);
-            this.Controls.Add(this.clientsButton);
-            this.Controls.Add(this.orderNumberValueLabel);
-            this.Controls.Add(this.orderNumberLabel);
             this.Controls.Add(this.clearCartButton);
             this.Controls.Add(this.label12);
             this.Controls.Add(this.label11);

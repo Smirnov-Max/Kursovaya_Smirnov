@@ -18,9 +18,6 @@
         private System.Windows.Forms.Button deleteButton;
         private System.Windows.Forms.Button menuButton;
         private System.Windows.Forms.Panel panel1;
-        private System.Windows.Forms.Label recordCountLabel;
-        private System.Windows.Forms.Button phoneEyeButton;
-        private System.Windows.Forms.Button addToOrderButton;
 
         protected override void Dispose(bool disposing)
         {
@@ -49,9 +46,6 @@
             this.addButton = new System.Windows.Forms.Button();
             this.editButton = new System.Windows.Forms.Button();
             this.deleteButton = new System.Windows.Forms.Button();
-            this.recordCountLabel = new System.Windows.Forms.Label();
-            this.phoneEyeButton = new System.Windows.Forms.Button();
-            this.addToOrderButton = new System.Windows.Forms.Button();
             this.panel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.clientsDataGridView)).BeginInit();
             this.groupBox1.SuspendLayout();
@@ -141,7 +135,6 @@
             // 
             // groupBox1
             // 
-            this.groupBox1.Controls.Add(this.phoneEyeButton);
             this.groupBox1.Controls.Add(this.phoneTextBox);
             this.groupBox1.Controls.Add(this.label3);
             this.groupBox1.Controls.Add(this.fioTextBox);
@@ -220,42 +213,9 @@
             this.deleteButton.UseVisualStyleBackColor = false;
             this.deleteButton.Click += new System.EventHandler(this.deleteButton_Click);
             // 
-            // recordCountLabel
-            // 
-            this.recordCountLabel.AutoSize = true;
-            this.recordCountLabel.Location = new System.Drawing.Point(49, 100);
-            this.recordCountLabel.Name = "recordCountLabel";
-            this.recordCountLabel.Size = new System.Drawing.Size(70, 13);
-            this.recordCountLabel.TabIndex = 9;
-            this.recordCountLabel.Text = "Записей: 0";
-            // 
-            // phoneEyeButton
-            // 
-            this.phoneEyeButton.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.phoneEyeButton.FlatAppearance.BorderSize = 0;
-            this.phoneEyeButton.Location = new System.Drawing.Point(253, 68);
-            this.phoneEyeButton.Name = "phoneEyeButton";
-            this.phoneEyeButton.Size = new System.Drawing.Size(30, 23);
-            this.phoneEyeButton.TabIndex = 10;
-            this.phoneEyeButton.Text = "👁";
-            this.phoneEyeButton.UseVisualStyleBackColor = true;
-            // 
-            // addToOrderButton
-            // 
-            this.addToOrderButton.BackColor = System.Drawing.Color.Coral;
-            this.addToOrderButton.Location = new System.Drawing.Point(9, 385);
-            this.addToOrderButton.Name = "addToOrderButton";
-            this.addToOrderButton.Size = new System.Drawing.Size(296, 30);
-            this.addToOrderButton.TabIndex = 11;
-            this.addToOrderButton.Text = "Добавить в заказ";
-            this.addToOrderButton.UseVisualStyleBackColor = false;
-            this.addToOrderButton.Click += new System.EventHandler(this.addToOrderButton_Click);
-            // 
             // ClientsForm
             // 
             this.ClientSize = new System.Drawing.Size(884, 436);
-            this.Controls.Add(this.recordCountLabel);
-            this.Controls.Add(this.addToOrderButton);
             this.Controls.Add(this.deleteButton);
             this.Controls.Add(this.editButton);
             this.Controls.Add(this.addButton);

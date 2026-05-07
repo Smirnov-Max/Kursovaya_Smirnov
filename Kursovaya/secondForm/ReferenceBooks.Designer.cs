@@ -59,14 +59,8 @@
         private System.Windows.Forms.Label customNameLabel;
         private System.Windows.Forms.Label customDescLabel;
 
-        // Счётчики записей
-        private System.Windows.Forms.Label categoryCountLabel;
-        private System.Windows.Forms.Label statusCountLabel;
-        private System.Windows.Forms.Label roleCountLabel;
-
+        // Кнопка экспорта в csv
         private System.Windows.Forms.Button btnExportAll;
-        private System.Windows.Forms.Button btnImportCsv;
-        private System.Windows.Forms.Button btnBackupRestore;
 
         protected override void Dispose(bool disposing)
         {
@@ -99,7 +93,6 @@
             this.addCategoryButton = new System.Windows.Forms.Button();
             this.editCategoryButton = new System.Windows.Forms.Button();
             this.deleteCategoryButton = new System.Windows.Forms.Button();
-            this.categoryCountLabel = new System.Windows.Forms.Label();
             this.statusesPanel = new System.Windows.Forms.Panel();
             this.statusesDataGridView = new System.Windows.Forms.DataGridView();
             this.statusNameLabel = new System.Windows.Forms.Label();
@@ -109,7 +102,6 @@
             this.addStatusButton = new System.Windows.Forms.Button();
             this.editStatusButton = new System.Windows.Forms.Button();
             this.deleteStatusButton = new System.Windows.Forms.Button();
-            this.statusCountLabel = new System.Windows.Forms.Label();
             this.rolesPanel = new System.Windows.Forms.Panel();
             this.rolesDataGridView = new System.Windows.Forms.DataGridView();
             this.roleNameLabel = new System.Windows.Forms.Label();
@@ -119,7 +111,6 @@
             this.addRoleButton = new System.Windows.Forms.Button();
             this.editRoleButton = new System.Windows.Forms.Button();
             this.deleteRoleButton = new System.Windows.Forms.Button();
-            this.roleCountLabel = new System.Windows.Forms.Label();
             this.customTablesPanel = new System.Windows.Forms.Panel();
             this.customTableDataGridView = new System.Windows.Forms.DataGridView();
             this.tablesListBox = new System.Windows.Forms.ListBox();
@@ -134,8 +125,6 @@
             this.deleteFromCustomTableButton = new System.Windows.Forms.Button();
             this.tablesListLabel = new System.Windows.Forms.Label();
             this.btnExportAll = new System.Windows.Forms.Button();
-            this.btnImportCsv = new System.Windows.Forms.Button();
-            this.btnBackupRestore = new System.Windows.Forms.Button();
             this.panel1.SuspendLayout();
             this.categoriesPanel.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.categoriesDataGridView)).BeginInit();
@@ -236,7 +225,6 @@
             this.categoriesPanel.Controls.Add(this.addCategoryButton);
             this.categoriesPanel.Controls.Add(this.editCategoryButton);
             this.categoriesPanel.Controls.Add(this.deleteCategoryButton);
-            this.categoriesPanel.Controls.Add(this.categoryCountLabel);
             this.categoriesPanel.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
             | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
@@ -270,17 +258,7 @@
             this.categoriesDataGridView.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
             this.categoriesDataGridView.Size = new System.Drawing.Size(548, 435);
             this.categoriesDataGridView.TabIndex = 0;
-            this.categoriesDataGridView.DefaultCellStyle.Font = new System.Drawing.Font("Segoe UI", 10F);
             this.categoriesDataGridView.SelectionChanged += new System.EventHandler(this.categoriesDataGridView_SelectionChanged);
-            // 
-            // categoryCountLabel
-            // 
-            this.categoryCountLabel.AutoSize = true;
-            this.categoryCountLabel.Location = new System.Drawing.Point(12, 435);
-            this.categoryCountLabel.Name = "categoryCountLabel";
-            this.categoryCountLabel.Size = new System.Drawing.Size(100, 13);
-            this.categoryCountLabel.TabIndex = 20;
-            this.categoryCountLabel.Text = "Записей: 0";
             // 
             // categoryNameLabel
             // 
@@ -355,7 +333,6 @@
             this.statusesPanel.Controls.Add(this.addStatusButton);
             this.statusesPanel.Controls.Add(this.editStatusButton);
             this.statusesPanel.Controls.Add(this.deleteStatusButton);
-            this.statusesPanel.Controls.Add(this.statusCountLabel);
             this.statusesPanel.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
             | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
@@ -389,17 +366,7 @@
             this.statusesDataGridView.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
             this.statusesDataGridView.Size = new System.Drawing.Size(548, 435);
             this.statusesDataGridView.TabIndex = 0;
-            this.statusesDataGridView.DefaultCellStyle.Font = new System.Drawing.Font("Segoe UI", 10F);
             this.statusesDataGridView.SelectionChanged += new System.EventHandler(this.statusesDataGridView_SelectionChanged);
-            // 
-            // statusCountLabel
-            // 
-            this.statusCountLabel.AutoSize = true;
-            this.statusCountLabel.Location = new System.Drawing.Point(12, 435);
-            this.statusCountLabel.Name = "statusCountLabel";
-            this.statusCountLabel.Size = new System.Drawing.Size(100, 13);
-            this.statusCountLabel.TabIndex = 21;
-            this.statusCountLabel.Text = "Записей: 0";
             // 
             // statusNameLabel
             // 
@@ -474,7 +441,6 @@
             this.rolesPanel.Controls.Add(this.addRoleButton);
             this.rolesPanel.Controls.Add(this.editRoleButton);
             this.rolesPanel.Controls.Add(this.deleteRoleButton);
-            this.rolesPanel.Controls.Add(this.roleCountLabel);
             this.rolesPanel.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
             | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
@@ -508,17 +474,7 @@
             this.rolesDataGridView.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
             this.rolesDataGridView.Size = new System.Drawing.Size(548, 435);
             this.rolesDataGridView.TabIndex = 0;
-            this.rolesDataGridView.DefaultCellStyle.Font = new System.Drawing.Font("Segoe UI", 10F);
             this.rolesDataGridView.SelectionChanged += new System.EventHandler(this.rolesDataGridView_SelectionChanged);
-            // 
-            // roleCountLabel
-            // 
-            this.roleCountLabel.AutoSize = true;
-            this.roleCountLabel.Location = new System.Drawing.Point(12, 435);
-            this.roleCountLabel.Name = "roleCountLabel";
-            this.roleCountLabel.Size = new System.Drawing.Size(100, 13);
-            this.roleCountLabel.TabIndex = 22;
-            this.roleCountLabel.Text = "Записей: 0";
             // 
             // roleNameLabel
             // 
@@ -747,38 +703,6 @@
             this.btnExportAll.UseVisualStyleBackColor = false;
             this.btnExportAll.Click += new System.EventHandler(this.btnExportAll_Click);
             // 
-            // btnImportCsv
-            // 
-            this.btnImportCsv.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
-            this.btnImportCsv.BackColor = System.Drawing.Color.Coral;
-            this.btnImportCsv.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(((int)(((byte)(235)))), ((int)(((byte)(107)))), ((int)(((byte)(60)))));
-            this.btnImportCsv.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnImportCsv.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(204)));
-            this.btnImportCsv.ForeColor = System.Drawing.Color.Black;
-            this.btnImportCsv.Location = new System.Drawing.Point(540, 568);
-            this.btnImportCsv.Name = "btnImportCsv";
-            this.btnImportCsv.Size = new System.Drawing.Size(150, 30);
-            this.btnImportCsv.TabIndex = 21;
-            this.btnImportCsv.Text = "Импорт таблицы";
-            this.btnImportCsv.UseVisualStyleBackColor = false;
-            this.btnImportCsv.Click += new System.EventHandler(this.btnImportCsv_Click);
-            // 
-            // btnBackupRestore
-            // 
-            this.btnBackupRestore.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
-            this.btnBackupRestore.BackColor = System.Drawing.Color.Coral;
-            this.btnBackupRestore.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(((int)(((byte)(235)))), ((int)(((byte)(107)))), ((int)(((byte)(60)))));
-            this.btnBackupRestore.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnBackupRestore.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(204)));
-            this.btnBackupRestore.ForeColor = System.Drawing.Color.Black;
-            this.btnBackupRestore.Location = new System.Drawing.Point(12, 568);
-            this.btnBackupRestore.Name = "btnBackupRestore";
-            this.btnBackupRestore.Size = new System.Drawing.Size(200, 30);
-            this.btnBackupRestore.TabIndex = 22;
-            this.btnBackupRestore.Text = "Резервное копирование / Восстановление";
-            this.btnBackupRestore.UseVisualStyleBackColor = false;
-            this.btnBackupRestore.Click += new System.EventHandler(this.btnBackupRestore_Click);
-            // 
             // ReferencesForm
             // 
             this.ClientSize = new System.Drawing.Size(884, 609);
@@ -792,8 +716,6 @@
             this.Controls.Add(this.categoriesButton);
             this.Controls.Add(this.panel1);
             this.Controls.Add(this.btnExportAll);
-            this.Controls.Add(this.btnImportCsv);
-            this.Controls.Add(this.btnBackupRestore);
             this.MinimumSize = new System.Drawing.Size(900, 648);
             this.Name = "ReferencesForm";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;

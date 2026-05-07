@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Drawing;
-using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
@@ -49,19 +48,7 @@ namespace Smirnov_kursovaya.secondForm
             clientsDataGridView.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
             clientsDataGridView.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
             clientsDataGridView.ColumnHeadersHeight = 40;
-            clientsDataGridView.EnableHeadersVisualStyles = false;
-
-            // Шрифт 10pt для ячеек
-            clientsDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10F);
-
-            // Кнопка показа скрытых цифр телефона
-            phoneEyeButton.MouseDown += PhoneEyeButton_MouseDown;
-            phoneEyeButton.MouseUp += PhoneEyeButton_MouseUp;
-
-            // Русская раскладка для ФИО
-            fioTextBox.Enter += (s, e) => {
-                InputLanguage.CurrentInputLanguage = InputLanguage.FromCulture(new System.Globalization.CultureInfo("ru-RU"));
-            };
+            clientsDataGridView.EnableHeadersVisualStyles = false; // Отключаем стандартные стили Windows
 
             // Устанавливаем стиль
             ApplyCoralButtonStyle();
@@ -192,9 +179,8 @@ namespace Smirnov_kursovaya.secondForm
 
         private void ClientsForm_Load(object sender, EventArgs e)
         {
+            // Настройка маски телефона
             phoneTextBox.TextChanged += PhoneTextBox_TextChanged;
-            SetPlaceholderText(fioTextBox, "ФИО");
-            SetPlaceholderText(phoneTextBox, "+7(___) ___-__-__");
         }
 
         private void LoadClients()
@@ -217,16 +203,9 @@ namespace Smirnov_kursovaya.secondForm
                         // Настройка заголовков
                         if (clientsDataGridView.Columns.Count > 0)
                         {
-                            clientsDataGridView.Columns["id"].Visible = false;
+                            clientsDataGridView.Columns["id"].HeaderText = "ID";
                             clientsDataGridView.Columns["fio"].HeaderText = "ФИО";
                             clientsDataGridView.Columns["phone"].HeaderText = "Телефон";
-                        }
-                        recordCountLabel.Text = $"Записей: {dt.Rows.Count}";
-
-                        // Маскировка телефонов в таблице
-                        foreach (System.Data.DataRow row in dt.Rows)
-                        {
-                            row["phone"] = MaskPhone(row["phone"].ToString());
                         }
                     }
                 }
@@ -247,7 +226,7 @@ namespace Smirnov_kursovaya.secondForm
                 return false;
             }
 
-            if (string.IsNullOrEmpty(phoneTextBox.Text) || phoneTextBox.Text == "+7(___) ___-__-__")
+            if (string.IsNullOrEmpty(phoneTextBox.Text) || phoneTextBox.Text == "Телефон")
             {
                 MessageBox.Show("Введите телефон клиента", "Ошибка",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -456,7 +435,7 @@ namespace Smirnov_kursovaya.secondForm
         {
             fioTextBox.Text = "ФИО";
             fioTextBox.ForeColor = Color.Gray;
-            phoneTextBox.Text = "+7(___) ___-__-__";
+            phoneTextBox.Text = "Телефон";
             phoneTextBox.ForeColor = Color.Gray;
         }
 
@@ -477,18 +456,15 @@ namespace Smirnov_kursovaya.secondForm
 
             if (clientsDataGridView.DataSource is System.Data.DataTable dt)
             {
-                dt.DefaultView.RowFilter = $"phone LIKE '{searchText}%'";
+                dt.DefaultView.RowFilter = $"phone LIKE '%{searchText}%' OR fio LIKE '%{searchText}%'";
             }
         }
 
-        private bool sortAsc = true;
         private void sortButton_Click(object sender, EventArgs e)
         {
             if (clientsDataGridView.DataSource is System.Data.DataTable dt)
             {
-                dt.DefaultView.Sort = sortAsc ? "fio ASC" : "fio DESC";
-                sortAsc = !sortAsc;
-                sortButton.Text = sortAsc ? "Сорт. А-Я" : "Сорт. Я-А";
+                dt.DefaultView.Sort = "fio ASC";
             }
         }
 
@@ -509,68 +485,13 @@ namespace Smirnov_kursovaya.secondForm
             this.Close();
         }
 
-        private void PhoneEyeButton_MouseDown(object sender, MouseEventArgs e)
-        {
-            // Показать полный телефон в выделенной строке
-            if (clientsDataGridView.SelectedRows.Count > 0)
-            {
-                var row = clientsDataGridView.SelectedRows[0];
-                string phone = row.Cells["phone"].Value?.ToString() ?? "";
-                row.Cells["phone"].Value = phone;
-            }
-        }
-
-        private void PhoneEyeButton_MouseUp(object sender, MouseEventArgs e)
-        {
-            LoadClients();
-        }
-
-        private void addToOrderButton_Click(object sender, EventArgs e)
-        {
-            this.Close();
-        }
-
-        private string MaskPhone(string phone)
-        {
-            if (string.IsNullOrEmpty(phone)) return phone;
-            string digits = Regex.Replace(phone, @"[^\d]", "");
-            if (digits.Length == 11 && digits.StartsWith("7"))
-                digits = digits.Substring(1);
-            if (digits.Length == 10)
-                return $"+7(ХХХ)ХХХ-{digits.Substring(6, 2)}-{digits.Substring(8, 2)}";
-            return phone;
-        }
-
         // Валидация ввода
         private void fioTextBox_KeyPress(object sender, KeyPressEventArgs e)
         {
-            if (char.IsControl(e.KeyChar)) return;
-
-            TextBox tb = (TextBox)sender;
-            string currentText = tb.Text.Substring(0, tb.SelectionStart);
-
-            // Только русские буквы, пробелы и дефисы
-            if (!Regex.IsMatch(e.KeyChar.ToString(), @"[а-яА-ЯёЁ\s\-]"))
+            // Разрешаем только русские буквы, пробел и дефис
+            if (!char.IsControl(e.KeyChar) && !Regex.IsMatch(e.KeyChar.ToString(), @"[а-яА-ЯёЁ\s-]"))
             {
                 e.Handled = true;
-                return;
-            }
-
-            // Ограничение пробелов - не более 2
-            if (e.KeyChar == ' ')
-            {
-                int spaceCount = tb.Text.Count(c => c == ' ');
-                if (spaceCount >= 2)
-                {
-                    e.Handled = true;
-                    return;
-                }
-            }
-
-            // Автоматическая заглавная буква после пробела или в начале
-            if (currentText.Length == 0 || currentText.EndsWith(" ") || currentText.EndsWith("-"))
-            {
-                e.KeyChar = char.ToUpper(e.KeyChar);
             }
         }
 
@@ -586,14 +507,10 @@ namespace Smirnov_kursovaya.secondForm
 
         private void PhoneTextBox_TextChanged(object sender, EventArgs e)
         {
-            if (string.IsNullOrEmpty(phoneTextBox.Text) || phoneTextBox.Text == "+7(___) ___-__-__")
+            if (string.IsNullOrEmpty(phoneTextBox.Text) || phoneTextBox.Text == "Телефон")
                 return;
 
-            string phone = Regex.Replace(phoneTextBox.Text, @"[^\d]", "");
-            if (phone.StartsWith("7") && phone.Length > 10)
-                phone = phone.Substring(1);
-            if (phone.StartsWith("8") && phone.Length > 10)
-                phone = phone.Substring(1);
+            string phone = phoneTextBox.Text.Replace("+7", "").Replace("(", "").Replace(")", "").Replace("-", "").Replace(" ", "");
 
             if (phone.Length > 10)
             {
@@ -602,10 +519,8 @@ namespace Smirnov_kursovaya.secondForm
 
             if (phone.Length == 10)
             {
-                phoneTextBox.TextChanged -= PhoneTextBox_TextChanged;
-                phoneTextBox.Text = $"+7({phone.Substring(0, 3)}){phone.Substring(3, 3)}-{phone.Substring(6, 2)}-{phone.Substring(8, 2)}";
+                phoneTextBox.Text = $"+7 ({phone.Substring(0, 3)}) {phone.Substring(3, 3)}-{phone.Substring(6, 2)}-{phone.Substring(8, 2)}";
                 phoneTextBox.SelectionStart = phoneTextBox.Text.Length;
-                phoneTextBox.TextChanged += PhoneTextBox_TextChanged;
             }
         }
 

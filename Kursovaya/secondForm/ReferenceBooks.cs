@@ -54,12 +54,6 @@ namespace Smirnov_kursovaya.secondForm
             customTableDataGridView.GridColor = Color.LightGray;
             customTableDataGridView.CellBorderStyle = DataGridViewCellBorderStyle.Single;
 
-            // Шрифт 10pt для всех гридов
-            categoriesDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10F);
-            statusesDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10F);
-            rolesDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10F);
-            customTableDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10F);
-
             // Подсказки для текстовых полей
             SetPlaceholderText(categoryNameTextBox, "Название категории");
             SetPlaceholderText(categoryDescTextBox, "Описание категории");
@@ -86,57 +80,6 @@ namespace Smirnov_kursovaya.secondForm
                     };
                 }
             }
-        }
-
-        private void btnImportCsv_Click(object sender, EventArgs e)
-        {
-            using (var openFileDialog = new OpenFileDialog())
-            {
-                openFileDialog.Filter = "CSV файлы (*.csv)|*.csv";
-                openFileDialog.Title = "Выберите CSV файл для импорта";
-
-                if (openFileDialog.ShowDialog() == DialogResult.OK)
-                {
-                    try
-                    {
-                        string tableName = "";
-                        if (categoriesPanel.Visible)
-                            tableName = "categories";
-                        else if (statusesPanel.Visible)
-                            tableName = "statuses";
-                        else if (rolesPanel.Visible)
-                            tableName = "roles";
-                        else
-                        {
-                            MessageBox.Show("Выберите таблицу (Категории, Статусы или Роли) для импорта", "Информация",
-                                MessageBoxButtons.OK, MessageBoxIcon.Information);
-                            return;
-                        }
-
-                        int imported = dbHelper.ImportCsv(tableName, openFileDialog.FileName);
-                        MessageBox.Show($"Импорт завершен! Добавлено записей: {imported}", "Успех",
-                            MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                        if (tableName == "categories") LoadCategories();
-                        else if (tableName == "statuses") LoadStatuses();
-                        else if (tableName == "roles") LoadRoles();
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show($"Ошибка импорта: {ex.Message}", "Ошибка",
-                            MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }
-                }
-            }
-        }
-
-        private void btnBackupRestore_Click(object sender, EventArgs e)
-        {
-            DbRestoreImportForm dbForm = new DbRestoreImportForm();
-            dbForm.ShowDialog();
-            LoadCategories();
-            LoadStatuses();
-            LoadRoles();
         }
 
         private void btnExportAll_Click(object sender, EventArgs e)
@@ -410,13 +353,11 @@ namespace Smirnov_kursovaya.secondForm
 
                         if (categoriesDataGridView.Columns.Count > 0)
                         {
-                            categoriesDataGridView.Columns["id"].Visible = false;
+                            categoriesDataGridView.Columns["id"].HeaderText = "ID";
                             categoriesDataGridView.Columns["name"].HeaderText = "Название";
-                            categoriesDataGridView.Columns["description"].Visible = false;
+                            categoriesDataGridView.Columns["description"].HeaderText = "Описание";
                             categoriesDataGridView.RowHeadersVisible = false;
-                            categoriesDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
                         }
-                        categoryCountLabel.Text = $"Записей: {dt.Rows.Count}";
                     }
                 }
             }
@@ -444,13 +385,11 @@ namespace Smirnov_kursovaya.secondForm
 
                         if (statusesDataGridView.Columns.Count > 0)
                         {
-                            statusesDataGridView.Columns["id"].Visible = false;
+                            statusesDataGridView.Columns["id"].HeaderText = "ID";
                             statusesDataGridView.Columns["name"].HeaderText = "Название";
-                            statusesDataGridView.Columns["description"].Visible = false;
+                            statusesDataGridView.Columns["description"].HeaderText = "Описание";
                             statusesDataGridView.RowHeadersVisible = false;
-                            statusesDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
                         }
-                        statusCountLabel.Text = $"Записей: {dt.Rows.Count}";
                     }
                 }
             }
@@ -478,13 +417,11 @@ namespace Smirnov_kursovaya.secondForm
 
                         if (rolesDataGridView.Columns.Count > 0)
                         {
-                            rolesDataGridView.Columns["id"].Visible = false;
+                            rolesDataGridView.Columns["id"].HeaderText = "ID";
                             rolesDataGridView.Columns["name"].HeaderText = "Название";
-                            rolesDataGridView.Columns["description"].Visible = false;
+                            rolesDataGridView.Columns["description"].HeaderText = "Описание";
                             rolesDataGridView.RowHeadersVisible = false;
-                            rolesDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
                         }
-                        roleCountLabel.Text = $"Записей: {dt.Rows.Count}";
                     }
                 }
             }

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Drawing;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
@@ -48,20 +47,7 @@ namespace Smirnov_kursovaya.secondForm
             usersDataGridView.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
             usersDataGridView.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
             usersDataGridView.ColumnHeadersHeight = 40;
-            usersDataGridView.EnableHeadersVisualStyles = false;
-
-            // Шрифт 10pt для ячеек
-            usersDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10F);
-
-            // Настройка кнопки показа пароля
-            passwordEyeButton.MouseDown += (s, e) => { passwordTextBox.UseSystemPasswordChar = false; };
-            passwordEyeButton.MouseUp += (s, e) => { passwordTextBox.UseSystemPasswordChar = true; };
-
-            // Русская раскладка и заглавные буквы для ФИО
-            fioTextBox.Enter += (s, e) => {
-                InputLanguage.CurrentInputLanguage = InputLanguage.FromCulture(new System.Globalization.CultureInfo("ru-RU"));
-            };
-            fioTextBox.KeyPress += FioTextBox_KeyPress;
+            usersDataGridView.EnableHeadersVisualStyles = false; // Отключаем стандартные стили Windows
 
             // Устанавливаем подсказки
             SetPlaceholderText(searchTextBox, "Поиск по логину или ФИО...");
@@ -260,13 +246,7 @@ namespace Smirnov_kursovaya.secondForm
                             usersDataGridView.Columns["login"].HeaderText = "Логин";
                             usersDataGridView.Columns["fio"].HeaderText = "ФИО";
                             usersDataGridView.Columns["role_name"].HeaderText = "Роль";
-                            // Порядок столбцов: ID, ФИО, Логин, Роль
-                            usersDataGridView.Columns["id"].DisplayIndex = 0;
-                            usersDataGridView.Columns["fio"].DisplayIndex = 1;
-                            usersDataGridView.Columns["login"].DisplayIndex = 2;
-                            usersDataGridView.Columns["role_name"].DisplayIndex = 3;
                         }
-                        recordCountLabel.Text = $"Записей: {dt.Rows.Count}";
                     }
                 }
             }
@@ -309,38 +289,6 @@ namespace Smirnov_kursovaya.secondForm
             }
         }
 
-        private void FioTextBox_KeyPress(object sender, KeyPressEventArgs e)
-        {
-            if (char.IsControl(e.KeyChar)) return;
-
-            TextBox tb = (TextBox)sender;
-            string currentText = tb.Text.Substring(0, tb.SelectionStart);
-
-            // Только русские буквы, пробелы и дефисы
-            if (!Regex.IsMatch(e.KeyChar.ToString(), @"[а-яА-ЯёЁ\s\-]"))
-            {
-                e.Handled = true;
-                return;
-            }
-
-            // Ограничение пробелов - не более 2
-            if (e.KeyChar == ' ')
-            {
-                int spaceCount = tb.Text.Count(c => c == ' ');
-                if (spaceCount >= 2)
-                {
-                    e.Handled = true;
-                    return;
-                }
-            }
-
-            // Автоматическая заглавная буква после пробела или в начале
-            if (currentText.Length == 0 || currentText.EndsWith(" ") || currentText.EndsWith("-"))
-            {
-                e.KeyChar = char.ToUpper(e.KeyChar);
-            }
-        }
-
         private bool ValidateUserInput(bool isAdding = false)
         {
             // Проверка ФИО
@@ -354,13 +302,6 @@ namespace Smirnov_kursovaya.secondForm
             if (!Regex.IsMatch(fioTextBox.Text, @"^[а-яА-ЯёЁ\s-]+$"))
             {
                 MessageBox.Show("ФИО должно содержать только русские буквы, пробелы и дефисы", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return false;
-            }
-
-            if (fioTextBox.Text.Count(c => c == ' ') > 2)
-            {
-                MessageBox.Show("ФИО не должно содержать более 2 пробелов", "Ошибка",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }

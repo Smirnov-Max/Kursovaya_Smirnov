@@ -29,6 +29,8 @@ namespace Smirnov_kursovaya.secondForm
 
         // Хранит временный путь к изображению до сохранения
         private string tempImagePath = null;
+        // Хранит текущий путь к изображению в БД (для режима редактирования)
+        private string currentImagePathInDb = null;
 
         // Путь к папке с изображениями в AppData
         private readonly string imagesFolderPath;
@@ -230,33 +232,27 @@ namespace Smirnov_kursovaya.secondForm
         private void SetupDataGridView()
         {
             productsDataGridView.Columns.Clear();
-            productsDataGridView.AutoGenerateColumns = false;
 
             DataGridViewImageColumn imageCol = new DataGridViewImageColumn();
             imageCol.Name = "image";
-            imageCol.HeaderText = "Фото";
+            imageCol.HeaderText = "Изображение";
             imageCol.DataPropertyName = "image";
             imageCol.ImageLayout = DataGridViewImageCellLayout.Zoom;
             imageCol.Width = 120;
-            imageCol.MinimumWidth = 80;
             productsDataGridView.Columns.Add(imageCol);
 
             productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "id", HeaderText = "ID", DataPropertyName = "id" });
-            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "article", HeaderText = "Артикул", DataPropertyName = "article", Width = 80 });
-            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "name", HeaderText = "Название", DataPropertyName = "name", Width = 150 });
-            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "category_name", HeaderText = "Категория", DataPropertyName = "category_name", Width = 100 });
+            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "article", HeaderText = "Артикул", DataPropertyName = "article" });
+            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "name", HeaderText = "Название", DataPropertyName = "name" });
+            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "category_name", HeaderText = "Категория", DataPropertyName = "category_name" });
             productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "price", HeaderText = "Цена", DataPropertyName = "price", Width = 80 });
-            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "description", HeaderText = "Описание", DataPropertyName = "description", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
+            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "description", HeaderText = "Описание", DataPropertyName = "description", FillWeight = 200 });
 
             productsDataGridView.Columns["id"].Visible = false;
+            if (productsDataGridView.Columns.Contains("category_id"))
+                productsDataGridView.Columns["category_id"].Visible = false;
 
             productsDataGridView.Columns["price"].DefaultCellStyle.Format = "#,##0.00 \"руб.\"";
-
-            // Отключаем перенос текста для всех столбцов
-            foreach (DataGridViewColumn col in productsDataGridView.Columns)
-            {
-                col.DefaultCellStyle.WrapMode = DataGridViewTriState.False;
-            }
 
             // Устанавливаем чередование цветов строк
             productsDataGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 240, 255);
@@ -286,11 +282,33 @@ namespace Smirnov_kursovaya.secondForm
             // Настройка сетки
             productsDataGridView.GridColor = Color.LightGray;
             productsDataGridView.CellBorderStyle = DataGridViewCellBorderStyle.Single;
-            productsDataGridView.RowTemplate.Height = 100;
-            productsDataGridView.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
+            productsDataGridView.RowTemplate.Height = 130;
 
-            // Шрифт 10pt для ячеек
-            productsDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10F);
+            // Обработчик для преобразования байтов в изображение
+            productsDataGridView.CellFormatting += (s, e) =>
+            {
+                if (productsDataGridView.Columns[e.ColumnIndex].Name == "image")
+                {
+                    if (e.Value is byte[] bytes && bytes.Length > 0)
+                    {
+                        try
+                        {
+                            using (MemoryStream ms = new MemoryStream(bytes))
+                            {
+                                e.Value = Image.FromStream(ms);
+                            }
+                        }
+                        catch
+                        {
+                            e.Value = ImageHelper.Placeholder.Clone();
+                        }
+                    }
+                    else
+                    {
+                        e.Value = ImageHelper.Placeholder.Clone();
+                    }
+                }
+            };
         }
     
 
@@ -1014,34 +1032,6 @@ namespace Smirnov_kursovaya.secondForm
             }
         }
 
-        private byte[] CompressImage(Image image, long maxSizeBytes)
-        {
-            var jpegCodec = System.Drawing.Imaging.ImageCodecInfo.GetImageEncoders()
-                .FirstOrDefault(c => c.MimeType == "image/jpeg");
-            if (jpegCodec == null) return null;
-
-            long[] qualityLevels = { 90, 80, 70, 60, 50, 40, 30, 20 };
-
-            foreach (long quality in qualityLevels)
-            {
-                using (var ms = new MemoryStream())
-                {
-                    var encoderParams = new System.Drawing.Imaging.EncoderParameters(1);
-                    encoderParams.Param[0] = new System.Drawing.Imaging.EncoderParameter(
-                        System.Drawing.Imaging.Encoder.Quality, quality);
-
-                    image.Save(ms, jpegCodec, encoderParams);
-
-                    if (ms.Length <= maxSizeBytes)
-                    {
-                        return ms.ToArray();
-                    }
-                }
-            }
-
-            return null;
-        }
-
         private void addImageButton_Click(object sender, EventArgs e)
         {
             if (readOnlyMode) return;
@@ -1055,48 +1045,38 @@ namespace Smirnov_kursovaya.secondForm
             {
                 try
                 {
-                    FileInfo fileInfo = new FileInfo(openFileDialog.FileName);
-                    long maxSize = 2621440; // 2.5 MB
-                    long targetSize = 2097152; // 2 MB
-
                     Image selectedImage;
                     using (FileStream fs = new FileStream(openFileDialog.FileName, FileMode.Open, FileAccess.Read, FileShare.Read))
                     {
                         selectedImage = Image.FromStream(fs);
                     }
 
+                    int maxWidth = 150;
+                    int maxHeight = 150;
+
+                    double ratioX = (double)maxWidth / selectedImage.Width;
+                    double ratioY = (double)maxHeight / selectedImage.Height;
+                    double ratio = Math.Min(ratioX, ratioY);
+
+                    int newWidth = (int)(selectedImage.Width * ratio);
+                    int newHeight = (int)(selectedImage.Height * ratio);
+
+                    Bitmap resizedImage = new Bitmap(newWidth, newHeight);
+                    using (Graphics g = Graphics.FromImage(resizedImage))
+                    {
+                        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                        g.DrawImage(selectedImage, 0, 0, newWidth, newHeight);
+                    }
+
+                    selectedImage.Dispose();
+
                     if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
                     {
                         DeleteImageFile(tempImagePath);
                     }
 
-                    if (fileInfo.Length > targetSize)
-                    {
-                        byte[] compressed = CompressImage(selectedImage, targetSize);
-
-                        if (compressed != null)
-                        {
-                            tempImagePath = Path.Combine(Path.GetTempPath(), $"product_temp_{Guid.NewGuid()}.jpg");
-                            File.WriteAllBytes(tempImagePath, compressed);
-                        }
-                        else if (fileInfo.Length <= maxSize)
-                        {
-                            tempImagePath = SaveImageToTemp(selectedImage);
-                        }
-                        else
-                        {
-                            selectedImage.Dispose();
-                            MessageBox.Show($"Изображение слишком большое ({fileInfo.Length / 1048576.0:N1} МБ). Максимум 2.5 МБ.",
-                                "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        tempImagePath = SaveImageToTemp(selectedImage);
-                    }
-
-                    selectedImage.Dispose();
+                    tempImagePath = SaveImageToTemp(resizedImage);
+                    resizedImage.Dispose();
 
                     if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
                     {
