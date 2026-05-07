@@ -63,13 +63,14 @@ namespace Smirnov_kursovaya.secondForm
             completionDatePicker.Value = DateTime.Now.AddDays(1);
             completionDatePicker.MinDate = DateTime.Now;
 
-            // Настройка скидок
-            discountComboBox.Items.AddRange(new object[] { "0%", "5%", "10%", "15%", "20%" });
-            discountComboBox.SelectedIndex = 0;
-
             // Подсказки
-            SetPlaceholderText(searchProductsTextBox, "Поиск по названию или артикулу...");
-            SetPlaceholderText(searchClientTextBox, "Поиск клиента по ФИО или телефону...");
+            SetPlaceholderText(searchProductsTextBox, "Поиск по названию...");
+
+            // Номер заказа
+            GenerateAndDisplayOrderNumber();
+
+            // UP/DOWN клавиши для количества
+            cartDataGridView.KeyDown += CartDataGridView_KeyDown;
 
             // Устанавливаем стиль
             ApplyCoralButtonStyle();
@@ -147,8 +148,11 @@ namespace Smirnov_kursovaya.secondForm
             productsDataGridView.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(255, 127, 80);
             productsDataGridView.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
             productsDataGridView.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
-            productsDataGridView.ColumnHeadersHeight = 50; // УВЕЛИЧЕНО: было 40, стало 50
+            productsDataGridView.ColumnHeadersHeight = 50;
             productsDataGridView.EnableHeadersVisualStyles = false;
+
+            // Шрифт 10pt
+            productsDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10F);
         }
 
         private void SetupCartDataGridView()
@@ -173,6 +177,9 @@ namespace Smirnov_kursovaya.secondForm
             cartDataGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             cartDataGridView.ReadOnly = true;
             cartDataGridView.RowHeadersVisible = false;
+
+            // Шрифт 10pt
+            cartDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10F);
         }
 
         private void SetPlaceholderText(TextBox textBox, string placeholder)
@@ -453,6 +460,17 @@ namespace Smirnov_kursovaya.secondForm
         private void NewOrderForm_Load(object sender, EventArgs e)
         {
             UpdateCartDisplay();
+            clientComboBox.SelectedIndexChanged += (s, ev) =>
+            {
+                if (clientComboBox.SelectedItem is ClientItem ci)
+                {
+                    clientInfoLabel.Text = ci.Display;
+                }
+                else
+                {
+                    clientInfoLabel.Text = "Клиент не выбран";
+                }
+            };
         }
 
         private void addToCartButton_Click(object sender, EventArgs e)
@@ -579,17 +597,65 @@ namespace Smirnov_kursovaya.secondForm
         private void CalculateTotals()
         {
             subtotal = 0;
+            int totalItems = 0;
             foreach (var item in cartItems)
             {
                 subtotal += item.Total;
+                totalItems += item.Quantity;
             }
+
+            // Автоматический расчет скидки
+            discountPercent = CalculateAutoDiscount(totalItems, subtotal);
 
             decimal discountAmount = subtotal * (discountPercent / 100);
             decimal total = subtotal - discountAmount;
 
-            subtotalLabel.Text = total.ToString("C2"); // ИСПРАВЛЕНО: было subtotalLabel, теперь total
-            discountAmountLabel.Text = discountAmount.ToString("C2");
-            totalLabel.Text = total.ToString("C2");
+            // Обновляем отображение скидки
+            discountComboBox.SelectedIndexChanged -= discountComboBox_SelectedIndexChanged;
+            for (int i = 0; i < discountComboBox.Items.Count; i++)
+            {
+                if (discountComboBox.Items[i].ToString() == $"{(int)discountPercent}%")
+                {
+                    discountComboBox.SelectedIndex = i;
+                    break;
+                }
+            }
+            discountComboBox.SelectedIndexChanged += discountComboBox_SelectedIndexChanged;
+
+            subtotalLabel.Text = subtotal.ToString("N2") + " руб.";
+            discountAmountLabel.Text = discountAmount.ToString("N2") + " руб.";
+            totalLabel.Text = total.ToString("N2") + " руб.";
+        }
+
+        private decimal CalculateAutoDiscount(int totalItems, decimal totalSum)
+        {
+            decimal discount = 0;
+
+            // Понедельник - 20% на все
+            if (DateTime.Now.DayOfWeek == DayOfWeek.Monday)
+            {
+                discount = 20;
+            }
+
+            // От количества позиций
+            if (totalItems >= 10)
+                discount = Math.Max(discount, 15);
+            else if (totalItems >= 5)
+                discount = Math.Max(discount, 10);
+            else if (totalItems >= 3)
+                discount = Math.Max(discount, 5);
+
+            // От суммы покупки
+            if (totalSum >= 50000)
+                discount = Math.Max(discount, 20);
+            else if (totalSum >= 20000)
+                discount = Math.Max(discount, 15);
+            else if (totalSum >= 10000)
+                discount = Math.Max(discount, 10);
+            else if (totalSum >= 5000)
+                discount = Math.Max(discount, 5);
+
+            return discount;
         }
 
         private void discountComboBox_SelectedIndexChanged(object sender, EventArgs e)
@@ -642,16 +708,9 @@ namespace Smirnov_kursovaya.secondForm
                                                 1, @discount, @total_amount, @final_amount, @notes, @order_number);
                                                 SELECT LAST_INSERT_ID();";
 
-                            string orderNumber = GenerateOrderNumber();
+                            string orderNumber = orderNumberValueLabel.Text;
                             decimal totalAmount = subtotal;
-
-                            // Получаем итоговую сумму из totalLabel
-                            string totalText = totalLabel.Text.Replace("₽", "").Replace("$", "").Replace(" ", "").Replace("руб", "").Trim();
-
-                            if (!decimal.TryParse(totalText, out decimal finalAmount))
-                            {
-                                finalAmount = subtotal * (1 - discountPercent / 100);
-                            }
+                            decimal finalAmount = subtotal * (1 - discountPercent / 100);
 
                             long orderId;
 
@@ -695,6 +754,9 @@ namespace Smirnov_kursovaya.secondForm
                             MessageBox.Show($"Заказ №{orderNumber} успешно создан!", "Успех",
                                 MessageBoxButtons.OK, MessageBoxIcon.Information);
 
+                            ViewOrderForm viewOrder = new ViewOrderForm((int)orderId);
+                            viewOrder.ShowDialog();
+
                             ClearForm();
                         }
                         catch (Exception ex)
@@ -713,7 +775,72 @@ namespace Smirnov_kursovaya.secondForm
 
         private string GenerateOrderNumber()
         {
-            return $"ORD{DateTime.Now:yyyyMMddHHmmss}";
+            try
+            {
+                using (var connection = dbHelper.GetConnection())
+                {
+                    connection.Open();
+                    string query = "SELECT COUNT(*) FROM orders";
+                    using (var command = new MySqlCommand(query, connection))
+                    {
+                        int count = Convert.ToInt32(command.ExecuteScalar());
+                        return (count + 1).ToString("D6");
+                    }
+                }
+            }
+            catch
+            {
+                return "000001";
+            }
+        }
+
+        private void GenerateAndDisplayOrderNumber()
+        {
+            string orderNumber = GenerateOrderNumber();
+            orderNumberValueLabel.Text = orderNumber;
+        }
+
+        private void clientsButton_Click(object sender, EventArgs e)
+        {
+            ClientsForm clientsForm = new ClientsForm();
+            clientsForm.ShowDialog();
+            LoadClients();
+        }
+
+        private void CartDataGridView_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (cartDataGridView.SelectedRows.Count == 0) return;
+
+            DataGridViewRow selectedRow = cartDataGridView.SelectedRows[0];
+            if (selectedRow.Cells["ProductId"].Value == null) return;
+
+            int productId = Convert.ToInt32(selectedRow.Cells["ProductId"].Value);
+            OrderItem item = cartItems.Find(i => i.ProductId == productId);
+            if (item == null) return;
+
+            if (e.KeyCode == Keys.Up)
+            {
+                item.Quantity++;
+                item.Total = item.Quantity * item.Price;
+                UpdateCartDisplay();
+                CalculateTotals();
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.Down)
+            {
+                if (item.Quantity > 0)
+                {
+                    item.Quantity--;
+                    item.Total = item.Quantity * item.Price;
+                    if (item.Quantity == 0)
+                    {
+                        cartItems.Remove(item);
+                    }
+                    UpdateCartDisplay();
+                    CalculateTotals();
+                }
+                e.Handled = true;
+            }
         }
 
         private void ClearForm()
@@ -721,24 +848,22 @@ namespace Smirnov_kursovaya.secondForm
             cartItems.Clear();
             UpdateCartDisplay();
             CalculateTotals();
-            discountComboBox.SelectedIndex = 0;
 
-            // Сброс поисковых полей
-            searchProductsTextBox.Text = "Поиск по названию или артикулу...";
+            searchProductsTextBox.Text = "Поиск по названию...";
             searchProductsTextBox.ForeColor = Color.Gray;
 
-            searchClientTextBox.Text = "Поиск клиента по ФИО или телефону...";
-            searchClientTextBox.ForeColor = Color.Gray;
-
             clientComboBox.SelectedIndex = -1;
+            clientInfoLabel.Text = "Клиент не выбран";
             quantityTextBox.Text = "1";
             quantityTextBox.ForeColor = Color.Gray;
+
+            GenerateAndDisplayOrderNumber();
         }
 
         private void searchProductsTextBox_TextChanged(object sender, EventArgs e)
         {
             string searchText = searchProductsTextBox.Text;
-            if (searchText == "Поиск по названию или артикулу...")
+            if (searchText == "Поиск по названию...")
                 return;
 
             foreach (DataGridViewRow row in productsDataGridView.Rows)
@@ -746,11 +871,9 @@ namespace Smirnov_kursovaya.secondForm
                 if (row.Cells["name"].Value == null) continue;
 
                 string name = row.Cells["name"].Value?.ToString() ?? "";
-                string article = row.Cells["article"].Value?.ToString() ?? "";
 
                 bool visible = string.IsNullOrEmpty(searchText) ||
-                              name.ToLower().Contains(searchText.ToLower()) ||
-                              article.ToLower().Contains(searchText.ToLower());
+                              name.ToLower().StartsWith(searchText.ToLower());
 
                 row.Visible = visible;
             }
@@ -758,11 +881,6 @@ namespace Smirnov_kursovaya.secondForm
 
         private void searchClientTextBox_TextChanged(object sender, EventArgs e)
         {
-            string searchText = searchClientTextBox.Text;
-            if (searchText == "Поиск клиента по ФИО или телефону...")
-                return;
-
-            UpdateClientComboBox(searchText);
         }
 
         private void cartDataGridView_SelectionChanged(object sender, EventArgs e)
@@ -831,7 +949,7 @@ namespace Smirnov_kursovaya.secondForm
 
         private void searchProductsTextBox_Enter(object sender, EventArgs e)
         {
-            if (searchProductsTextBox.Text == "Поиск по названию или артикулу...")
+            if (searchProductsTextBox.Text == "Поиск по названию...")
             {
                 searchProductsTextBox.Text = "";
                 searchProductsTextBox.ForeColor = Color.Black;
@@ -842,27 +960,17 @@ namespace Smirnov_kursovaya.secondForm
         {
             if (string.IsNullOrWhiteSpace(searchProductsTextBox.Text))
             {
-                searchProductsTextBox.Text = "Поиск по названию или артикулу...";
+                searchProductsTextBox.Text = "Поиск по названию...";
                 searchProductsTextBox.ForeColor = Color.Gray;
             }
         }
 
         private void searchClientTextBox_Enter(object sender, EventArgs e)
         {
-            if (searchClientTextBox.Text == "Поиск клиента по ФИО или телефону...")
-            {
-                searchClientTextBox.Text = "";
-                searchClientTextBox.ForeColor = Color.Black;
-            }
         }
 
         private void searchClientTextBox_Leave(object sender, EventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(searchClientTextBox.Text))
-            {
-                searchClientTextBox.Text = "Поиск клиента по ФИО или телефону...";
-                searchClientTextBox.ForeColor = Color.Gray;
-            }
         }
     }
 }

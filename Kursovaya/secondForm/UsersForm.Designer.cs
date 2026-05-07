@@ -23,6 +23,8 @@
         private System.Windows.Forms.Button resetPasswordButton;
         private System.Windows.Forms.TextBox passwordTextBox;
         private System.Windows.Forms.Label labelPassword;
+        private System.Windows.Forms.Label recordCountLabel;
+        private System.Windows.Forms.Button passwordEyeButton;
 
         protected override void Dispose(bool disposing)
         {
@@ -56,6 +58,8 @@
             this.addButton = new System.Windows.Forms.Button();
             this.editButton = new System.Windows.Forms.Button();
             this.deleteButton = new System.Windows.Forms.Button();
+            this.recordCountLabel = new System.Windows.Forms.Label();
+            this.passwordEyeButton = new System.Windows.Forms.Button();
             this.panel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.usersDataGridView)).BeginInit();
             this.groupBox1.SuspendLayout();
@@ -145,6 +149,7 @@
             // 
             // groupBox1
             // 
+            this.groupBox1.Controls.Add(this.passwordEyeButton);
             this.groupBox1.Controls.Add(this.resetPasswordButton);
             this.groupBox1.Controls.Add(this.passwordTextBox);
             this.groupBox1.Controls.Add(this.labelPassword);
@@ -278,9 +283,30 @@
             this.deleteButton.UseVisualStyleBackColor = false;
             this.deleteButton.Click += new System.EventHandler(this.deleteButton_Click);
             // 
+            // recordCountLabel
+            // 
+            this.recordCountLabel.AutoSize = true;
+            this.recordCountLabel.Location = new System.Drawing.Point(55, 100);
+            this.recordCountLabel.Name = "recordCountLabel";
+            this.recordCountLabel.Size = new System.Drawing.Size(70, 13);
+            this.recordCountLabel.TabIndex = 9;
+            this.recordCountLabel.Text = "Записей: 0";
+            // 
+            // passwordEyeButton
+            // 
+            this.passwordEyeButton.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.passwordEyeButton.FlatAppearance.BorderSize = 0;
+            this.passwordEyeButton.Location = new System.Drawing.Point(253, 115);
+            this.passwordEyeButton.Name = "passwordEyeButton";
+            this.passwordEyeButton.Size = new System.Drawing.Size(30, 23);
+            this.passwordEyeButton.TabIndex = 10;
+            this.passwordEyeButton.Text = "👁";
+            this.passwordEyeButton.UseVisualStyleBackColor = true;
+            // 
             // UsersForm
             // 
             this.ClientSize = new System.Drawing.Size(884, 491);
+            this.Controls.Add(this.recordCountLabel);
             this.Controls.Add(this.deleteButton);
             this.Controls.Add(this.editButton);
             this.Controls.Add(this.addButton);
