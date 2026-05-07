@@ -211,6 +211,7 @@
             // 
             // btnClientDetails
             // 
+            this.btnClientDetails.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
             this.btnClientDetails.BackColor = System.Drawing.Color.Coral;
             this.btnClientDetails.FlatAppearance.BorderColor = System.Drawing.Color.Gray;
             this.btnClientDetails.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
@@ -226,6 +227,7 @@
             // 
             // label11
             // 
+            this.label11.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.label11.AutoSize = true;
             this.label11.Location = new System.Drawing.Point(600, 173);
             this.label11.Name = "label11";
@@ -235,6 +237,7 @@
             // 
             // label10
             // 
+            this.label10.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.label10.AutoSize = true;
             this.label10.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold);
             this.label10.Location = new System.Drawing.Point(600, 143);
@@ -245,6 +248,7 @@
             // 
             // label9
             // 
+            this.label9.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.label9.AutoSize = true;
             this.label9.Location = new System.Drawing.Point(600, 90);
             this.label9.Name = "label9";
@@ -254,6 +258,7 @@
             // 
             // label8
             // 
+            this.label8.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.label8.AutoSize = true;
             this.label8.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Bold);
             this.label8.Location = new System.Drawing.Point(600, 60);
@@ -319,6 +324,7 @@
             // 
             // printButton
             // 
+            this.printButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
             this.printButton.BackColor = System.Drawing.Color.Coral;
             this.printButton.Location = new System.Drawing.Point(10, 235);
             this.printButton.Name = "printButton";
@@ -330,6 +336,7 @@
             // 
             // updateStatusButton
             // 
+            this.updateStatusButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.updateStatusButton.BackColor = System.Drawing.Color.Coral;
             this.updateStatusButton.Location = new System.Drawing.Point(680, 205);
             this.updateStatusButton.Name = "updateStatusButton";
@@ -341,6 +348,7 @@
             // 
             // applyDiscountButton
             // 
+            this.applyDiscountButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.applyDiscountButton.BackColor = System.Drawing.Color.Coral;
             this.applyDiscountButton.Location = new System.Drawing.Point(770, 169);
             this.applyDiscountButton.Name = "applyDiscountButton";
@@ -354,6 +362,7 @@
             // 
             this.statusComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.statusComboBox.FormattingEnabled = true;
+            this.statusComboBox.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.statusComboBox.Location = new System.Drawing.Point(683, 115);
             this.statusComboBox.Name = "statusComboBox";
             this.statusComboBox.Size = new System.Drawing.Size(170, 21);
@@ -369,6 +378,7 @@
             "10%",
             "15%",
             "20%"});
+            this.discountComboBox.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.discountComboBox.Location = new System.Drawing.Point(680, 171);
             this.discountComboBox.Name = "discountComboBox";
             this.discountComboBox.Size = new System.Drawing.Size(80, 21);
@@ -380,8 +390,9 @@
             this.orderItemsDataGridView.AllowUserToDeleteRows = false;
             dataGridViewCellStyle3.BackColor = System.Drawing.Color.WhiteSmoke;
             this.orderItemsDataGridView.AlternatingRowsDefaultCellStyle = dataGridViewCellStyle3;
-            this.orderItemsDataGridView.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
-            | System.Windows.Forms.AnchorStyles.Left)));
+            this.orderItemsDataGridView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.orderItemsDataGridView.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.Fill;
             this.orderItemsDataGridView.AutoSizeRowsMode = System.Windows.Forms.DataGridViewAutoSizeRowsMode.AllCells;
             this.orderItemsDataGridView.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
@@ -395,6 +406,7 @@
             // 
             // totalLabel
             // 
+            this.totalLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.totalLabel.AutoSize = true;
             this.totalLabel.Font = new System.Drawing.Font("Microsoft Sans Serif", 12F, System.Drawing.FontStyle.Bold);
             this.totalLabel.Location = new System.Drawing.Point(680, 143);
@@ -405,6 +417,7 @@
             // 
             // discountLabel
             // 
+            this.discountLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.discountLabel.AutoSize = true;
             this.discountLabel.Location = new System.Drawing.Point(680, 90);
             this.discountLabel.Name = "discountLabel";
@@ -414,6 +427,7 @@
             // 
             // subtotalLabel
             // 
+            this.subtotalLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.subtotalLabel.AutoSize = true;
             this.subtotalLabel.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Bold);
             this.subtotalLabel.Location = new System.Drawing.Point(680, 60);

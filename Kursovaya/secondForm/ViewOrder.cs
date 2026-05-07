@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Data;
 using System.Drawing;
+using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
@@ -15,6 +16,7 @@ namespace Smirnov_kursovaya.secondForm
         private bool isManagerMode;
         private int selectedOrderId = 0;
         private int currentClientId = 0;
+        private decimal cachedSubtotal = 0;
 
         // Конструктор для менеджера/продавца (список заказов)
         public ViewOrderForm(bool isManagerMode = false)
@@ -334,18 +336,19 @@ namespace Smirnov_kursovaya.secondForm
                                 decimal finalAmount = reader["final_amount"] != DBNull.Value ?
                                     Convert.ToDecimal(reader["final_amount"]) : 0;
 
-                                subtotalLabel.Text = totalAmount.ToString("C2");
-                                totalLabel.Text = finalAmount.ToString("C2");
+                                cachedSubtotal = totalAmount;
+                                subtotalLabel.Text = totalAmount.ToString("N2") + " руб.";
+                                totalLabel.Text = finalAmount.ToString("N2") + " руб.";
 
                                 decimal discountAmount = totalAmount - finalAmount;
-                                discountLabel.Text = discountAmount.ToString("C2");
+                                discountLabel.Text = discountAmount.ToString("N2") + " руб.";
 
                                 if (reader["discount"] != DBNull.Value)
                                 {
-                                    string discountStr = reader["discount"].ToString().Replace("%", "");
-                                    if (int.TryParse(discountStr, out int discountValue))
+                                    string discountStr = reader["discount"].ToString().Replace("%", "").Replace(",", ".").Trim();
+                                    if (decimal.TryParse(discountStr, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal discountValue))
                                     {
-                                        int index = discountValue / 5;
+                                        int index = (int)Math.Round(discountValue) / 5;
                                         if (index >= 0 && index < discountComboBox.Items.Count)
                                             discountComboBox.SelectedIndex = index;
                                     }
@@ -530,11 +533,15 @@ namespace Smirnov_kursovaya.secondForm
             try
             {
                 string discountText = discountComboBox.SelectedItem.ToString();
-                discountText = discountText.Replace("%", "");
-                decimal discount = decimal.Parse(discountText);
+                discountText = discountText.Replace("%", "").Trim();
+                if (!decimal.TryParse(discountText, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal discount))
+                {
+                    MessageBox.Show("Неверный формат скидки", "Ошибка",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
 
-                string subtotalText = subtotalLabel.Text.Replace("₽", "").Replace("$", "").Replace(" ", "").Replace("руб", "");
-                decimal totalAmount = decimal.Parse(subtotalText);
+                decimal totalAmount = cachedSubtotal;
 
                 decimal discountAmount = totalAmount * (discount / 100);
                 decimal finalAmount = totalAmount - discountAmount;
@@ -558,8 +565,8 @@ namespace Smirnov_kursovaya.secondForm
                         MessageBox.Show($"Скидка {discount}% успешно применена", "Успех",
                             MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-                        discountLabel.Text = discountAmount.ToString("C2");
-                        totalLabel.Text = finalAmount.ToString("C2");
+                        discountLabel.Text = discountAmount.ToString("N2") + " руб.";
+                        totalLabel.Text = finalAmount.ToString("N2") + " руб.";
 
                         if (ordersDataGridView.Visible)
                             LoadAllOrders();
