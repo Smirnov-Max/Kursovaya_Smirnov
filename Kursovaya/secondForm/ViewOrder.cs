@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Data;
 using System.Drawing;
+using System.Drawing.Printing;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
@@ -102,6 +104,10 @@ namespace Smirnov_kursovaya.secondForm
             orderItemsDataGridView.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
             orderItemsDataGridView.ColumnHeadersHeight = 40;
             orderItemsDataGridView.EnableHeadersVisualStyles = false;
+
+            // Шрифт 10pt
+            ordersDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10F);
+            orderItemsDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10F);
 
             foreach (Control control in this.Controls)
             {
@@ -415,12 +421,12 @@ namespace Smirnov_kursovaya.secondForm
 
                         if (orderItemsDataGridView.Columns.Contains("Цена"))
                         {
-                            orderItemsDataGridView.Columns["Цена"].DefaultCellStyle.Format = "C2";
+                            orderItemsDataGridView.Columns["Цена"].DefaultCellStyle.Format = "N2";
                         }
 
                         if (orderItemsDataGridView.Columns.Contains("Сумма"))
                         {
-                            orderItemsDataGridView.Columns["Сумма"].DefaultCellStyle.Format = "C2";
+                            orderItemsDataGridView.Columns["Сумма"].DefaultCellStyle.Format = "N2";
                         }
                     }
                 }
@@ -483,6 +489,41 @@ namespace Smirnov_kursovaya.secondForm
             try
             {
                 dynamic selectedStatus = statusComboBox.SelectedItem;
+                string statusName = selectedStatus.Name.ToString().ToLower();
+
+                // Проверяем текущий статус - закрытые заказы нельзя редактировать
+                string currentStatus = statusLabel.Text.ToLower();
+                if (currentStatus.Contains("завершен") || currentStatus.Contains("отменен"))
+                {
+                    MessageBox.Show("Заказ закрыт и не может быть изменен", "Ошибка",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // Проверка отмены - срок 1 день
+                if (statusName.Contains("отменен"))
+                {
+                    using (var conn = dbHelper.GetConnection())
+                    {
+                        conn.Open();
+                        string checkQuery = "SELECT date_of_creation FROM orders WHERE id = @order_id";
+                        using (var checkCmd = new MySqlCommand(checkQuery, conn))
+                        {
+                            checkCmd.Parameters.AddWithValue("@order_id", selectedOrderId);
+                            object result = checkCmd.ExecuteScalar();
+                            if (result != null && result != DBNull.Value)
+                            {
+                                DateTime creationDate = Convert.ToDateTime(result);
+                                if ((DateTime.Now - creationDate).TotalDays > 1)
+                                {
+                                    MessageBox.Show("Отмена заказа возможна только в течение 1 дня после создания", "Ошибка",
+                                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
 
                 using (var connection = dbHelper.GetConnection())
                 {
@@ -496,8 +537,23 @@ namespace Smirnov_kursovaya.secondForm
                         int rowsAffected = command.ExecuteNonQuery();
                         if (rowsAffected > 0)
                         {
-                            MessageBox.Show("Статус заказа успешно обновлен", "Успех",
-                                MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            // Если завершен - печать чека
+                            if (statusName.Contains("завершен"))
+                            {
+                                MessageBox.Show("Заказ завершен. Печать чека...", "Успех",
+                                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                                PrintReceipt();
+                            }
+                            else if (statusName.Contains("отменен"))
+                            {
+                                MessageBox.Show("Заказ отменен", "Информация",
+                                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            }
+                            else
+                            {
+                                MessageBox.Show("Статус заказа успешно обновлен", "Успех",
+                                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            }
 
                             if (ordersDataGridView.Visible)
                                 LoadAllOrders();
@@ -607,9 +663,7 @@ namespace Smirnov_kursovaya.secondForm
                 }
                 else
                 {
-                    string filter = $"CONVERT([Номер заказа], 'System.String') LIKE '%{searchText}%' OR " +
-                                   $"[Клиент] LIKE '%{searchText}%' OR " +
-                                   $"[Статус] LIKE '%{searchText}%'";
+                    string filter = $"CONVERT([Номер заказа], 'System.String') LIKE '{searchText}%'";
                     dt.DefaultView.RowFilter = filter;
                 }
             }
@@ -725,6 +779,96 @@ namespace Smirnov_kursovaya.secondForm
         private void menuButton_Click(object sender, EventArgs e)
         {
             this.Close();
+        }
+
+        private void blankOrderButton_Click(object sender, EventArgs e)
+        {
+            if (selectedOrderId == 0)
+            {
+                MessageBox.Show("Выберите заказ", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            try
+            {
+                string blankContent = GenerateOrderBlank();
+
+                SaveFileDialog saveFileDialog = new SaveFileDialog();
+                saveFileDialog.Filter = "Текстовые файлы (*.txt)|*.txt";
+                saveFileDialog.FileName = $"Бланк_заказа_{orderNumberLabel.Text.Replace(" ", "_")}_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
+                saveFileDialog.Title = "Сохранить бланк заказа";
+                saveFileDialog.DefaultExt = "txt";
+
+                if (saveFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    System.IO.File.WriteAllText(saveFileDialog.FileName, blankContent, System.Text.Encoding.UTF8);
+
+                    MessageBox.Show($"Бланк заказа сохранен:\n{saveFileDialog.FileName}", "Бланк сохранен",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                    if (MessageBox.Show("Открыть бланк для просмотра?", "Просмотр бланка",
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                    {
+                        System.Diagnostics.Process.Start(saveFileDialog.FileName);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при создании бланка: {ex.Message}", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private string GenerateOrderBlank()
+        {
+            string itemsText = "";
+            if (orderItemsDataGridView.DataSource is DataTable dt)
+            {
+                int num = 1;
+                foreach (DataRow row in dt.Rows)
+                {
+                    string productName = row["Товар"]?.ToString() ?? "Неизвестный товар";
+                    string quantity = row["Количество"]?.ToString() ?? "0";
+
+                    decimal price = 0;
+                    decimal total = 0;
+
+                    if (row["Цена"] != DBNull.Value && row["Цена"] != null)
+                        price = Convert.ToDecimal(row["Цена"]);
+
+                    if (row["Сумма"] != DBNull.Value && row["Сумма"] != null)
+                        total = Convert.ToDecimal(row["Сумма"]);
+
+                    itemsText += $"  {num}. {productName} - {quantity} шт. x {price:N2} руб. = {total:N2} руб.\n";
+                    num++;
+                }
+            }
+
+            return $@"========================================
+          БЛАНК ЗАКАЗА
+========================================
+Магазин воздушных шаров 'Воздушный мир'
+Дата: {DateTime.Now:dd.MM.yyyy HH:mm}
+----------------------------------------
+Номер заказа: {orderNumberLabel.Text}
+Дата создания: {orderDateLabel.Text}
+Дата выполнения: {completionDateLabel.Text}
+Клиент: {clientNameLabel.Text}
+Телефон: {clientPhoneLabel.Text}
+Статус: {statusLabel.Text}
+----------------------------------------
+ТОВАРЫ:
+{itemsText}
+----------------------------------------
+Подытог: {subtotalLabel.Text}
+Скидка: {discountLabel.Text}
+ИТОГО: {totalLabel.Text}
+----------------------------------------
+Подпись клиента: _______________
+Подпись продавца: _______________
+========================================";
         }
 
         private void btnClientDetails_Click(object sender, EventArgs e)

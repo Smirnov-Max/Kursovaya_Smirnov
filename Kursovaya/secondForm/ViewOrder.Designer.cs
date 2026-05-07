@@ -37,6 +37,7 @@
         private System.Windows.Forms.Label label11;
         private System.Windows.Forms.ComboBox discountComboBox;
         private System.Windows.Forms.Button btnClientDetails;
+        private System.Windows.Forms.Button blankOrderButton;
 
         protected override void Dispose(bool disposing)
         {
@@ -59,6 +60,7 @@
             this.refreshButton = new System.Windows.Forms.Button();
             this.orderDetailsPanel = new System.Windows.Forms.Panel();
             this.btnClientDetails = new System.Windows.Forms.Button();
+            this.blankOrderButton = new System.Windows.Forms.Button();
             this.label11 = new System.Windows.Forms.Label();
             this.label10 = new System.Windows.Forms.Label();
             this.label9 = new System.Windows.Forms.Label();
@@ -177,6 +179,7 @@
             | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.orderDetailsPanel.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.orderDetailsPanel.Controls.Add(this.blankOrderButton);
             this.orderDetailsPanel.Controls.Add(this.btnClientDetails);
             this.orderDetailsPanel.Controls.Add(this.label11);
             this.orderDetailsPanel.Controls.Add(this.label10);
@@ -490,6 +493,22 @@
             this.orderNumberLabel.Size = new System.Drawing.Size(52, 17);
             this.orderNumberLabel.TabIndex = 1;
             this.orderNumberLabel.Text = "label2";
+            // 
+            // blankOrderButton
+            // 
+            this.blankOrderButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.blankOrderButton.BackColor = System.Drawing.Color.Coral;
+            this.blankOrderButton.FlatAppearance.BorderColor = System.Drawing.Color.Gray;
+            this.blankOrderButton.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.blankOrderButton.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(204)));
+            this.blankOrderButton.ForeColor = System.Drawing.Color.Black;
+            this.blankOrderButton.Location = new System.Drawing.Point(300, 235);
+            this.blankOrderButton.Name = "blankOrderButton";
+            this.blankOrderButton.Size = new System.Drawing.Size(150, 30);
+            this.blankOrderButton.TabIndex = 28;
+            this.blankOrderButton.Text = "Бланк заказа";
+            this.blankOrderButton.UseVisualStyleBackColor = false;
+            this.blankOrderButton.Click += new System.EventHandler(this.blankOrderButton_Click);
             // 
             // ViewOrderForm
             // 
