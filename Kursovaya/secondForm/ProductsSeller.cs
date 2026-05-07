@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
@@ -125,7 +126,7 @@ namespace Smirnov_kursovaya.secondForm
                 nameTextBox.Text = "";
             if (articleTextBox.Text == "Артикул (только цифры)")
                 articleTextBox.Text = "";
-            if (priceTextBox.Text == "Цена (например: 1000.50)")
+            if (priceTextBox.Text == "Цена (например: 1000,50)" || priceTextBox.Text == "Цена (например: 1000.50)")
                 priceTextBox.Text = "";
 
             // Меняем заголовок формы
@@ -138,7 +139,7 @@ namespace Smirnov_kursovaya.secondForm
             SetPlaceholderText(searchTextBox, "Поиск по названию...");
             SetPlaceholderText(nameTextBox, "Название товара");
             SetPlaceholderText(articleTextBox, "Артикул (только цифры)");
-            SetPlaceholderText(priceTextBox, "Цена (например: 1000.50)");
+            SetPlaceholderText(priceTextBox, "Цена (например: 1000,50)");
 
             // Настройка DataGridView (стилизация и русские заголовки)
             SetupDataGridView();
@@ -244,14 +245,14 @@ namespace Smirnov_kursovaya.secondForm
             productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "article", HeaderText = "Артикул", DataPropertyName = "article" });
             productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "name", HeaderText = "Название", DataPropertyName = "name" });
             productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "category_name", HeaderText = "Категория", DataPropertyName = "category_name" });
-            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "price", HeaderText = "Цена", DataPropertyName = "price" });
-            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "description", HeaderText = "Описание", DataPropertyName = "description" });
+            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "price", HeaderText = "Цена", DataPropertyName = "price", Width = 80 });
+            productsDataGridView.Columns.Add(new DataGridViewTextBoxColumn() { Name = "description", HeaderText = "Описание", DataPropertyName = "description", FillWeight = 200 });
 
             productsDataGridView.Columns["id"].Visible = false;
             if (productsDataGridView.Columns.Contains("category_id"))
                 productsDataGridView.Columns["category_id"].Visible = false;
 
-            productsDataGridView.Columns["price"].DefaultCellStyle.Format = "C2";
+            productsDataGridView.Columns["price"].DefaultCellStyle.Format = "#,##0.00 \"руб.\"";
 
             // Устанавливаем чередование цветов строк
             productsDataGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 240, 255);
@@ -405,7 +406,7 @@ namespace Smirnov_kursovaya.secondForm
 
                 // Форматируем цену
                 if (productsDataGridView.Columns.Contains("price"))
-                    productsDataGridView.Columns["price"].DefaultCellStyle.Format = "C2";
+                    productsDataGridView.Columns["price"].DefaultCellStyle.Format = "#,##0.00 \"руб.\"";
 
                 UpdatePaginationInfo();
             }
@@ -556,7 +557,7 @@ namespace Smirnov_kursovaya.secondForm
                 return false;
             }
 
-            if (string.IsNullOrEmpty(priceTextBox.Text) || priceTextBox.Text == "Цена (например: 1000.50)")
+            if (string.IsNullOrEmpty(priceTextBox.Text) || priceTextBox.Text == "Цена (например: 1000,50)" || priceTextBox.Text == "Цена (например: 1000.50)")
             {
                 MessageBox.Show("Введите цену товара", "Ошибка",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -570,7 +571,8 @@ namespace Smirnov_kursovaya.secondForm
                 return false;
             }
 
-            if (!decimal.TryParse(priceTextBox.Text, out decimal price) || price <= 0)
+            string priceInput = priceTextBox.Text.Replace(',', '.');
+            if (!decimal.TryParse(priceInput, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal price) || price <= 0)
             {
                 MessageBox.Show("Цена должна быть положительным числом", "Ошибка",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -896,7 +898,7 @@ namespace Smirnov_kursovaya.secondForm
                         command.Parameters.AddWithValue("@article", articleTextBox.Text);
                         command.Parameters.AddWithValue("@name", nameTextBox.Text);
                         command.Parameters.AddWithValue("@category_id", selectedCategory.Id);
-                        command.Parameters.AddWithValue("@price", decimal.Parse(priceTextBox.Text));
+                        command.Parameters.AddWithValue("@price", decimal.Parse(priceTextBox.Text.Replace(',', '.'), CultureInfo.InvariantCulture));
                         command.Parameters.AddWithValue("@description", descriptionTextBox.Text);
                         command.Parameters.AddWithValue("@image", imageData ?? (object)DBNull.Value);
                         command.Parameters.AddWithValue("@id", productId);

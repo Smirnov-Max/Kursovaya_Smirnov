@@ -225,6 +225,9 @@
             this.categoriesPanel.Controls.Add(this.addCategoryButton);
             this.categoriesPanel.Controls.Add(this.editCategoryButton);
             this.categoriesPanel.Controls.Add(this.deleteCategoryButton);
+            this.categoriesPanel.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.categoriesPanel.Location = new System.Drawing.Point(0, 102);
             this.categoriesPanel.Name = "categoriesPanel";
             this.categoriesPanel.Size = new System.Drawing.Size(884, 459);
@@ -244,6 +247,9 @@
             dataGridViewCellStyle1.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
             this.categoriesDataGridView.ColumnHeadersDefaultCellStyle = dataGridViewCellStyle1;
             this.categoriesDataGridView.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            this.categoriesDataGridView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.categoriesDataGridView.Location = new System.Drawing.Point(324, 12);
             this.categoriesDataGridView.MultiSelect = false;
             this.categoriesDataGridView.Name = "categoriesDataGridView";
@@ -327,6 +333,9 @@
             this.statusesPanel.Controls.Add(this.addStatusButton);
             this.statusesPanel.Controls.Add(this.editStatusButton);
             this.statusesPanel.Controls.Add(this.deleteStatusButton);
+            this.statusesPanel.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.statusesPanel.Location = new System.Drawing.Point(0, 102);
             this.statusesPanel.Name = "statusesPanel";
             this.statusesPanel.Size = new System.Drawing.Size(884, 459);
@@ -346,6 +355,9 @@
             dataGridViewCellStyle2.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
             this.statusesDataGridView.ColumnHeadersDefaultCellStyle = dataGridViewCellStyle2;
             this.statusesDataGridView.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            this.statusesDataGridView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.statusesDataGridView.Location = new System.Drawing.Point(324, 12);
             this.statusesDataGridView.MultiSelect = false;
             this.statusesDataGridView.Name = "statusesDataGridView";
@@ -429,6 +441,9 @@
             this.rolesPanel.Controls.Add(this.addRoleButton);
             this.rolesPanel.Controls.Add(this.editRoleButton);
             this.rolesPanel.Controls.Add(this.deleteRoleButton);
+            this.rolesPanel.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.rolesPanel.Location = new System.Drawing.Point(0, 102);
             this.rolesPanel.Name = "rolesPanel";
             this.rolesPanel.Size = new System.Drawing.Size(884, 459);
@@ -448,6 +463,9 @@
             dataGridViewCellStyle3.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
             this.rolesDataGridView.ColumnHeadersDefaultCellStyle = dataGridViewCellStyle3;
             this.rolesDataGridView.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            this.rolesDataGridView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.rolesDataGridView.Location = new System.Drawing.Point(324, 12);
             this.rolesDataGridView.MultiSelect = false;
             this.rolesDataGridView.Name = "rolesDataGridView";
@@ -535,6 +553,9 @@
             this.customTablesPanel.Controls.Add(this.addToCustomTableButton);
             this.customTablesPanel.Controls.Add(this.deleteFromCustomTableButton);
             this.customTablesPanel.Controls.Add(this.tablesListLabel);
+            this.customTablesPanel.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.customTablesPanel.Location = new System.Drawing.Point(0, 102);
             this.customTablesPanel.Name = "customTablesPanel";
             this.customTablesPanel.Size = new System.Drawing.Size(884, 459);
@@ -554,6 +575,9 @@
             dataGridViewCellStyle4.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
             this.customTableDataGridView.ColumnHeadersDefaultCellStyle = dataGridViewCellStyle4;
             this.customTableDataGridView.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+            this.customTableDataGridView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
+            | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
             this.customTableDataGridView.Location = new System.Drawing.Point(324, 12);
             this.customTableDataGridView.MultiSelect = false;
             this.customTableDataGridView.Name = "customTableDataGridView";
