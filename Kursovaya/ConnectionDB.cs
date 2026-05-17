@@ -193,7 +193,7 @@ namespace Smirnov_kursovaya.Database
                     string countQuery = "SELECT COUNT(*) FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE 1=1";
 
                     if (!string.IsNullOrEmpty(searchText))
-                        countQuery += " AND (p.name LIKE @search OR p.article LIKE @search)";
+                        countQuery += " AND p.name LIKE @search";
 
                     if (!string.IsNullOrEmpty(category) && category != "Все категории")
                         countQuery += " AND c.name = @category";
@@ -201,7 +201,7 @@ namespace Smirnov_kursovaya.Database
                     using (var cmd = new MySqlCommand(countQuery, conn))
                     {
                         if (!string.IsNullOrEmpty(searchText))
-                            cmd.Parameters.AddWithValue("@search", "%" + searchText + "%");
+                            cmd.Parameters.AddWithValue("@search", searchText + "%");
                         if (!string.IsNullOrEmpty(category) && category != "Все категории")
                             cmd.Parameters.AddWithValue("@category", category);
 
@@ -224,7 +224,7 @@ namespace Smirnov_kursovaya.Database
                 WHERE 1=1";
 
                     if (!string.IsNullOrEmpty(searchText))
-                        query += " AND (p.name LIKE @search OR p.article LIKE @search)";
+                        query += " AND p.name LIKE @search";
 
                     if (!string.IsNullOrEmpty(category) && category != "Все категории")
                         query += " AND c.name = @category";
@@ -234,7 +234,7 @@ namespace Smirnov_kursovaya.Database
                     using (var cmd = new MySqlCommand(query, conn))
                     {
                         if (!string.IsNullOrEmpty(searchText))
-                            cmd.Parameters.AddWithValue("@search", "%" + searchText + "%");
+                            cmd.Parameters.AddWithValue("@search", searchText + "%");
                         if (!string.IsNullOrEmpty(category) && category != "Все категории")
                             cmd.Parameters.AddWithValue("@category", category);
 

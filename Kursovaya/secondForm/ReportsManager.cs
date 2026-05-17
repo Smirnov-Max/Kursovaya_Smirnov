@@ -2,7 +2,12 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Text;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
 using Smirnov_kursovaya.Database;
@@ -11,1010 +16,838 @@ namespace Smirnov_kursovaya.secondForm
 {
     public partial class ReportsForm : Form
     {
-        private DatabaseHelper dbHelper;
+        private readonly DatabaseHelper dbHelper;
+        private readonly CultureInfo Ru = CultureInfo.GetCultureInfo("ru-RU");
+
+        // Данные графиков
+        private List<DailyPoint> revenueCurrent = new List<DailyPoint>();
+        private List<DailyPoint> revenuePrior = new List<DailyPoint>();
+        private List<BarItem> topProducts = new List<BarItem>();
+        private List<PieSlice> statusSlices = new List<PieSlice>();
+
+        private static readonly Color[] PiePalette = new[]
+        {
+            Color.FromArgb(255, 127, 80),
+            Color.FromArgb(72, 167, 215),
+            Color.FromArgb(120, 200, 130),
+            Color.FromArgb(245, 196, 80),
+            Color.FromArgb(160, 130, 220),
+            Color.FromArgb(220, 110, 150),
+        };
 
         public ReportsForm()
         {
             InitializeComponent();
             dbHelper = new DatabaseHelper();
-            InitializeControls();
+            InitializeDashboard();
         }
 
-        private void InitializeControls()
+        private void InitializeDashboard()
         {
-            // Настройка DataGridView
-            reportsDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            reportsDataGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            reportsDataGridView.ReadOnly = true;
-            reportsDataGridView.RowHeadersVisible = false;
-
-            // Настройка стиля сетки
-            reportsDataGridView.GridColor = Color.LightGray;
-            reportsDataGridView.CellBorderStyle = DataGridViewCellBorderStyle.Single;
-
-            // Устанавливаем чередование цветов строк
-            reportsDataGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 240, 255); // Очень светлый фиолетовый
-
-            // Цвет выделенной строки - очень светлый фиолетовый
-            reportsDataGridView.DefaultCellStyle.SelectionBackColor = Color.FromArgb(230, 210, 250); // Светлый фиолетовый для выделения
-            reportsDataGridView.DefaultCellStyle.SelectionForeColor = Color.Black; // Черный текст для контраста
-
-            // Цвет заголовков
-            reportsDataGridView.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(255, 127, 80); // Coral цвет
-            reportsDataGridView.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
-            reportsDataGridView.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
-            reportsDataGridView.ColumnHeadersHeight = 40;
-            reportsDataGridView.EnableHeadersVisualStyles = false; // Отключаем стандартные стили Windows
-
-            // Настройка дат
-            reportFromDatePicker.Value = DateTime.Today.AddDays(-30);
+            reportFromDatePicker.Value = DateTime.Today.AddDays(-29);
             reportToDatePicker.Value = DateTime.Today;
-            reportFromDatePicker.MaxDate = DateTime.Today.AddDays(-1); // Не позже вчера
-            reportToDatePicker.MaxDate = DateTime.Today; // Не позже сегодня
 
-            // Настройка типов отчетов
-            reportTypeComboBox.Items.AddRange(new object[] {
-                "Отчет по заказам",
-                "Отчет по продажам",
-                "Отчет по клиентам",
-                "Отчет по товарам"
-            });
-            reportTypeComboBox.SelectedIndex = 0;
+            revenueChartPanel.Paint += RevenueChartPanel_Paint;
+            topProductsChartPanel.Paint += TopProductsChartPanel_Paint;
+            statusPiePanel.Paint += StatusPiePanel_Paint;
 
-            // Устанавливаем стиль
-            ApplyCoralButtonStyle();
+            EnableDoubleBuffer(revenueChartPanel);
+            EnableDoubleBuffer(topProductsChartPanel);
+            EnableDoubleBuffer(statusPiePanel);
+
+            ApplyButtonHover(refreshButton, Color.Coral, Color.FromArgb(255, 147, 100));
+            ApplyButtonHover(pdfButton, Color.FromArgb(235, 107, 60), Color.FromArgb(255, 127, 80));
+            foreach (var b in new[] { presetWeekButton, presetMonthButton, presetQuarterButton, presetYearButton })
+            {
+                b.FlatAppearance.BorderColor = Color.FromArgb(220, 220, 220);
+                b.FlatAppearance.BorderSize = 1;
+                b.MouseEnter += (s, e) => ((Button)s).BackColor = Color.FromArgb(252, 238, 228);
+                b.MouseLeave += (s, e) => ((Button)s).BackColor = Color.White;
+            }
+
+            StyleTopClientsGrid();
+            foreach (var card in new[] { kpiCard1, kpiCard2, kpiCard3, kpiCard4 }) StyleKpiCard(card);
+            foreach (var p in new[] { revenueChartPanel, topProductsChartPanel, statusPiePanel, topClientsPanel }) StyleChartPanel(p);
         }
 
-        private void ApplyCoralButtonStyle()
+        private void EnableDoubleBuffer(Panel panel)
         {
-            Color coralColor = Color.FromArgb(255, 127, 80); // Coral цвет
-            Color coralLightColor = Color.FromArgb(255, 147, 100); // Светлее для hover
-            Color coralDarkColor = Color.FromArgb(235, 107, 60); // Темнее для нажатия
+            // ResizeRedraw защищён в Control, поэтому ставим оба свойства через рефлексию.
+            var t = typeof(Panel);
+            t.GetProperty("DoubleBuffered",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?.SetValue(panel, true, null);
+            t.GetProperty("ResizeRedraw",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                ?.SetValue(panel, true, null);
+        }
 
-            foreach (Control control in this.Controls)
+        private void StyleKpiCard(Panel card)
+        {
+            card.Paint += (s, e) =>
             {
-                if (control is Button button)
+                var bounds = new Rectangle(0, 0, card.Width - 1, card.Height - 1);
+                using (var pen = new Pen(Color.FromArgb(225, 225, 225), 1)) e.Graphics.DrawRectangle(pen, bounds);
+                using (var brush = new SolidBrush(Color.FromArgb(235, 107, 60))) e.Graphics.FillRectangle(brush, 0, 0, 4, card.Height);
+            };
+        }
+
+        private void StyleChartPanel(Panel panel)
+        {
+            panel.Paint += (s, e) =>
+            {
+                using (var pen = new Pen(Color.FromArgb(225, 225, 225), 1))
+                    e.Graphics.DrawRectangle(pen, new Rectangle(0, 0, panel.Width - 1, panel.Height - 1));
+            };
+        }
+
+        private void StyleTopClientsGrid()
+        {
+            topClientsGridView.RowHeadersVisible = false;
+            topClientsGridView.GridColor = Color.FromArgb(235, 235, 235);
+            topClientsGridView.DefaultCellStyle.Font = new Font("Segoe UI", 9.5F);
+            topClientsGridView.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(252, 238, 228);
+            topClientsGridView.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(40, 40, 40);
+            topClientsGridView.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
+            topClientsGridView.EnableHeadersVisualStyles = false;
+            topClientsGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(252, 248, 246);
+            topClientsGridView.DefaultCellStyle.SelectionBackColor = Color.FromArgb(252, 238, 228);
+            topClientsGridView.DefaultCellStyle.SelectionForeColor = Color.Black;
+        }
+
+        private void ApplyButtonHover(Button btn, Color normal, Color hover)
+        {
+            btn.MouseEnter += (s, e) => btn.BackColor = hover;
+            btn.MouseLeave += (s, e) => btn.BackColor = normal;
+        }
+
+        private void ReportsForm_Load(object sender, EventArgs e) => ReloadData();
+
+        private void ReloadData()
+        {
+            try
+            {
+                DateTime from = reportFromDatePicker.Value.Date;
+                DateTime to = reportToDatePicker.Value.Date;
+                if (to < from) { var tmp = from; from = to; to = tmp; }
+                int days = (int)(to - from).TotalDays + 1;
+                DateTime priorTo = from.AddDays(-1);
+                DateTime priorFrom = priorTo.AddDays(-(days - 1));
+
+                LoadKpis(from, to, priorFrom, priorTo);
+                LoadRevenueSeries(from, to, priorFrom, priorTo);
+                LoadTopProducts(from, to);
+                LoadStatusDistribution(from, to);
+                LoadTopClients(from, to);
+
+                revenueChartPanel.Invalidate();
+                topProductsChartPanel.Invalidate();
+                statusPiePanel.Invalidate();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка загрузки аналитики: {ex.Message}", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void LoadKpis(DateTime from, DateTime to, DateTime priorFrom, DateTime priorTo)
+        {
+            decimal revenue = 0, priorRevenue = 0;
+            int orders = 0, priorOrders = 0, activeClients = 0, priorActive = 0;
+
+            using (var conn = dbHelper.GetConnection())
+            {
+                conn.Open();
+                ReadKpiRow(conn, from, to, out revenue, out orders, out activeClients);
+                ReadKpiRow(conn, priorFrom, priorTo, out priorRevenue, out priorOrders, out priorActive);
+            }
+            decimal avg = orders > 0 ? revenue / orders : 0;
+            decimal priorAvg = priorOrders > 0 ? priorRevenue / priorOrders : 0;
+
+            kpi1Value.Text = revenue.ToString("N2", Ru) + " ₽";
+            SetDelta(kpi1Delta, revenue, priorRevenue);
+            kpi2Value.Text = orders.ToString("N0", Ru);
+            SetDelta(kpi2Delta, orders, priorOrders);
+            kpi3Value.Text = avg.ToString("N2", Ru) + " ₽";
+            SetDelta(kpi3Delta, avg, priorAvg);
+            kpi4Value.Text = activeClients.ToString("N0", Ru);
+            SetDelta(kpi4Delta, activeClients, priorActive);
+        }
+
+        private void ReadKpiRow(MySqlConnection conn, DateTime from, DateTime to,
+            out decimal revenue, out int orders, out int clients)
+        {
+            revenue = 0; orders = 0; clients = 0;
+            using (var cmd = new MySqlCommand(
+                @"SELECT COALESCE(SUM(final_amount),0), COUNT(*), COUNT(DISTINCT client_id)
+                  FROM orders WHERE date_of_creation BETWEEN @from AND @to", conn))
+            {
+                cmd.Parameters.AddWithValue("@from", from);
+                cmd.Parameters.AddWithValue("@to", to.AddDays(1).AddSeconds(-1));
+                using (var rd = cmd.ExecuteReader())
                 {
-                    ApplyButtonStyle(button, coralColor, coralLightColor, coralDarkColor);
-                }
-                else if (control is GroupBox groupBox)
-                {
-                    foreach (Control subControl in groupBox.Controls)
+                    if (rd.Read())
                     {
-                        if (subControl is Button subButton)
-                        {
-                            ApplyButtonStyle(subButton, coralColor, coralLightColor, coralDarkColor);
-                        }
+                        revenue = rd.IsDBNull(0) ? 0 : Convert.ToDecimal(rd.GetValue(0));
+                        orders = rd.IsDBNull(1) ? 0 : Convert.ToInt32(rd.GetValue(1));
+                        clients = rd.IsDBNull(2) ? 0 : Convert.ToInt32(rd.GetValue(2));
                     }
                 }
             }
+        }
 
-            // Особый стиль для кнопки меню (можно сделать другого цвета)
-            if (menuButton != null)
+        private void SetDelta(Label lbl, decimal current, decimal prior)
+        {
+            if (prior == 0)
             {
-                menuButton.BackColor = Color.Red; // Cornflower Blue
-                menuButton.FlatStyle = FlatStyle.Flat;
-                menuButton.FlatAppearance.BorderColor = Color.DarkRed;
-                menuButton.FlatAppearance.BorderSize = 1;
-                menuButton.ForeColor = Color.Black;
-                menuButton.Font = new Font(menuButton.Font, FontStyle.Regular);
-
-                // Убираем старые обработчики и добавляем новые
-                menuButton.MouseEnter -= (s, e) => { };
-                menuButton.MouseLeave -= (s, e) => { };
-                menuButton.MouseDown -= (s, e) => { };
-                menuButton.MouseUp -= (s, e) => { };
-
-                menuButton.MouseEnter += (s, e) => {
-                    menuButton.BackColor = Color.IndianRed;
-                };
-                menuButton.MouseLeave += (s, e) => {
-                    menuButton.BackColor = Color.Red;
-                };
-                menuButton.MouseDown += (s, e) => {
-                    menuButton.BackColor = Color.OrangeRed;
-                };
-                menuButton.MouseUp += (s, e) => {
-                    menuButton.BackColor = Color.OrangeRed;
-                };
-            }
-        }
-
-        private void ApplyButtonStyle(Button button, Color normalColor, Color hoverColor, Color pressedColor)
-        {
-            button.BackColor = normalColor;
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderColor = Color.FromArgb(235, 107, 60);
-            button.FlatAppearance.BorderSize = 1;
-            button.ForeColor = Color.Black;
-            button.Font = new Font(button.Font, FontStyle.Regular);
-
-            // Убираем старые обработчики
-            button.MouseEnter -= (s, e) => { };
-            button.MouseLeave -= (s, e) => { };
-            button.MouseDown -= (s, e) => { };
-            button.MouseUp -= (s, e) => { };
-
-            // Добавляем новые обработчики
-            button.MouseEnter += (s, e) => {
-                button.BackColor = hoverColor;
-            };
-            button.MouseLeave += (s, e) => {
-                button.BackColor = normalColor;
-            };
-            button.MouseDown += (s, e) => {
-                button.BackColor = pressedColor;
-            };
-            button.MouseUp += (s, e) => {
-                button.BackColor = hoverColor;
-            };
-        }
-
-        private void ReportsForm_Load(object sender, EventArgs e)
-        {
-            // Дополнительная инициализация
-        }
-
-        private void generateReportButton_Click(object sender, EventArgs e)
-        {
-            if (reportTypeComboBox.SelectedItem == null)
-            {
-                MessageBox.Show("Выберите тип отчета", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                lbl.Text = current > 0 ? "▲ новый период" : "—";
+                lbl.ForeColor = current > 0 ? Color.FromArgb(35, 145, 75) : Color.Gray;
                 return;
             }
+            decimal pct = (current - prior) / prior * 100m;
+            string arrow = pct >= 0 ? "▲" : "▼";
+            lbl.ForeColor = pct >= 0 ? Color.FromArgb(35, 145, 75) : Color.FromArgb(200, 60, 60);
+            lbl.Text = $"{arrow} {Math.Abs(pct):0.0}% к прошлому периоду";
+        }
 
-            try
+        private void LoadRevenueSeries(DateTime from, DateTime to, DateTime priorFrom, DateTime priorTo)
+        {
+            revenueCurrent = new List<DailyPoint>();
+            revenuePrior = new List<DailyPoint>();
+            using (var conn = dbHelper.GetConnection())
             {
-                string reportType = reportTypeComboBox.SelectedItem.ToString();
-                DataTable reportData = null;
+                conn.Open();
+                LoadDailyRevenueInto(conn, from, to, revenueCurrent);
+                LoadDailyRevenueInto(conn, priorFrom, priorTo, revenuePrior);
+            }
+        }
 
-                switch (reportType)
+        private void LoadDailyRevenueInto(MySqlConnection conn, DateTime from, DateTime to, List<DailyPoint> target)
+        {
+            var dict = new Dictionary<DateTime, decimal>();
+            using (var cmd = new MySqlCommand(
+                @"SELECT DATE(date_of_creation), COALESCE(SUM(final_amount),0)
+                  FROM orders WHERE date_of_creation BETWEEN @from AND @to
+                  GROUP BY DATE(date_of_creation)", conn))
+            {
+                cmd.Parameters.AddWithValue("@from", from);
+                cmd.Parameters.AddWithValue("@to", to.AddDays(1).AddSeconds(-1));
+                using (var rd = cmd.ExecuteReader())
                 {
-                    case "Отчет по заказам":
-                        reportData = GenerateOrdersReport();
-                        break;
-                    case "Отчет по продажам":
-                        reportData = GenerateSalesReport();
-                        break;
-                    case "Отчет по клиентам":
-                        reportData = GenerateClientsReport();
-                        break;
-                    case "Отчет по товарам":
-                        reportData = GenerateProductsReport();
-                        break;
+                    while (rd.Read())
+                        dict[rd.GetDateTime(0).Date] = rd.IsDBNull(1) ? 0 : Convert.ToDecimal(rd.GetValue(1));
                 }
+            }
+            for (DateTime d = from; d <= to; d = d.AddDays(1))
+                target.Add(new DailyPoint { Date = d, Value = dict.TryGetValue(d, out var v) ? v : 0 });
+        }
 
-                if (reportData != null && reportData.Rows.Count > 0)
+        private void LoadTopProducts(DateTime from, DateTime to)
+        {
+            topProducts = new List<BarItem>();
+            using (var conn = dbHelper.GetConnection())
+            {
+                conn.Open();
+                using (var cmd = new MySqlCommand(
+                    @"SELECT p.name, COALESCE(SUM(oi.total),0)
+                      FROM order_items oi
+                      INNER JOIN products p ON oi.product_id = p.id
+                      INNER JOIN orders o ON oi.order_id = o.id
+                      WHERE o.date_of_creation BETWEEN @from AND @to
+                      GROUP BY p.name ORDER BY 2 DESC LIMIT 5", conn))
                 {
-                    reportsDataGridView.DataSource = reportData;
-                    ApplyColumnHeaders(reportType);
-                    CalculateTotals(reportData, reportType);
+                    cmd.Parameters.AddWithValue("@from", from);
+                    cmd.Parameters.AddWithValue("@to", to.AddDays(1).AddSeconds(-1));
+                    using (var rd = cmd.ExecuteReader())
+                        while (rd.Read())
+                            topProducts.Add(new BarItem
+                            {
+                                Label = rd.GetString(0),
+                                Value = rd.IsDBNull(1) ? 0 : Convert.ToDecimal(rd.GetValue(1))
+                            });
+                }
+            }
+        }
+
+        private void LoadStatusDistribution(DateTime from, DateTime to)
+        {
+            statusSlices = new List<PieSlice>();
+            using (var conn = dbHelper.GetConnection())
+            {
+                conn.Open();
+                using (var cmd = new MySqlCommand(
+                    @"SELECT s.name, COUNT(o.id)
+                      FROM orders o
+                      INNER JOIN statuses s ON o.status_id = s.id
+                      WHERE o.date_of_creation BETWEEN @from AND @to
+                      GROUP BY s.name ORDER BY 2 DESC", conn))
+                {
+                    cmd.Parameters.AddWithValue("@from", from);
+                    cmd.Parameters.AddWithValue("@to", to.AddDays(1).AddSeconds(-1));
+                    int idx = 0;
+                    using (var rd = cmd.ExecuteReader())
+                        while (rd.Read())
+                        {
+                            statusSlices.Add(new PieSlice
+                            {
+                                Label = rd.GetString(0),
+                                Value = Convert.ToDecimal(rd.GetValue(1)),
+                                Color = PiePalette[idx % PiePalette.Length]
+                            });
+                            idx++;
+                        }
+                }
+            }
+        }
+
+        private void LoadTopClients(DateTime from, DateTime to)
+        {
+            var dt = new DataTable();
+            dt.Columns.Add("Клиент", typeof(string));
+            dt.Columns.Add("Заказы", typeof(int));
+            dt.Columns.Add("Сумма", typeof(string));
+            using (var conn = dbHelper.GetConnection())
+            {
+                conn.Open();
+                using (var cmd = new MySqlCommand(
+                    @"SELECT c.fio, COUNT(o.id), COALESCE(SUM(o.final_amount),0)
+                      FROM clients c INNER JOIN orders o ON o.client_id = c.id
+                      WHERE o.date_of_creation BETWEEN @from AND @to
+                      GROUP BY c.fio ORDER BY 3 DESC LIMIT 5", conn))
+                {
+                    cmd.Parameters.AddWithValue("@from", from);
+                    cmd.Parameters.AddWithValue("@to", to.AddDays(1).AddSeconds(-1));
+                    using (var rd = cmd.ExecuteReader())
+                        while (rd.Read())
+                            dt.Rows.Add(rd.GetString(0), Convert.ToInt32(rd.GetValue(1)),
+                                (rd.IsDBNull(2) ? 0m : Convert.ToDecimal(rd.GetValue(2))).ToString("N2", Ru) + " ₽");
+                }
+            }
+            topClientsGridView.DataSource = dt;
+            if (topClientsGridView.Columns.Contains("Сумма"))
+                topClientsGridView.Columns["Сумма"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+            if (topClientsGridView.Columns.Contains("Заказы"))
+                topClientsGridView.Columns["Заказы"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+        }
+
+        // ====== Рисование графиков на формe ======
+        private void RevenueChartPanel_Paint(object sender, PaintEventArgs e)
+        {
+            var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
+            DrawChartTitle(g, "Выручка по дням (текущий vs прошлый период)");
+            var area = new Rectangle(60, 50, revenueChartPanel.Width - 80, revenueChartPanel.Height - 80);
+            DrawLineChart(g, area, revenueCurrent, revenuePrior);
+            DrawLineLegend(g, revenueChartPanel.Width - 220, 32);
+        }
+
+        private void TopProductsChartPanel_Paint(object sender, PaintEventArgs e)
+        {
+            var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
+            DrawChartTitle(g, "Топ-5 товаров по выручке");
+            var area = new Rectangle(180, 50, topProductsChartPanel.Width - 200, topProductsChartPanel.Height - 70);
+            DrawHorizontalBars(g, area, topProducts, 12);
+        }
+
+        private void StatusPiePanel_Paint(object sender, PaintEventArgs e)
+        {
+            var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
+            DrawChartTitle(g, "Распределение по статусам");
+            DrawPie(g, new Rectangle(14, 44, statusPiePanel.Width - 28, statusPiePanel.Height - 60), statusSlices);
+        }
+
+        private void DrawChartTitle(Graphics g, string title)
+        {
+            using (var f = new Font("Segoe UI", 11F, FontStyle.Bold))
+            using (var b = new SolidBrush(Color.FromArgb(40, 40, 40)))
+                g.DrawString(title, f, b, new PointF(14, 12));
+        }
+
+        private void DrawLineChart(Graphics g, Rectangle area, List<DailyPoint> current, List<DailyPoint> prior)
+        {
+            using (var pen = new Pen(Color.FromArgb(220, 220, 220)))
+            {
+                g.DrawLine(pen, area.Left, area.Top, area.Left, area.Bottom);
+                g.DrawLine(pen, area.Left, area.Bottom, area.Right, area.Bottom);
+            }
+            decimal max = 0;
+            foreach (var p in current) if (p.Value > max) max = p.Value;
+            foreach (var p in prior) if (p.Value > max) max = p.Value;
+            if (max <= 0) max = 1;
+            decimal step = NiceStep(max / 4m);
+            decimal yMax = step * (decimal)Math.Ceiling((double)(max / step));
+            if (yMax <= 0) yMax = step;
+
+            using (var gridPen = new Pen(Color.FromArgb(238, 238, 238)))
+            using (var lf = new Font("Segoe UI", 8))
+            using (var lb = new SolidBrush(Color.Gray))
+            {
+                for (int i = 0; i <= 4; i++)
+                {
+                    decimal v = step * i;
+                    int y = area.Bottom - (int)((double)(v / yMax) * area.Height);
+                    g.DrawLine(gridPen, area.Left, y, area.Right, y);
+                    string text = ShortMoney(v);
+                    var size = g.MeasureString(text, lf);
+                    g.DrawString(text, lf, lb, area.Left - size.Width - 4, y - size.Height / 2);
+                }
+            }
+
+            DrawSeries(g, area, prior, yMax, Color.FromArgb(180, 180, 180), true);
+            DrawSeries(g, area, current, yMax, Color.FromArgb(235, 107, 60), false);
+
+            if (current.Count > 0)
+            {
+                using (var lf = new Font("Segoe UI", 8))
+                using (var lb = new SolidBrush(Color.Gray))
+                {
+                    int n = current.Count;
+                    int[] idxs = n >= 3 ? new[] { 0, n / 2, n - 1 } : new[] { 0, n - 1 };
+                    foreach (int i in idxs)
+                    {
+                        if (i < 0 || i >= n) continue;
+                        float x = area.Left + (n == 1 ? area.Width / 2f : (i / (float)(n - 1)) * area.Width);
+                        string text = current[i].Date.ToString("dd.MM");
+                        var size = g.MeasureString(text, lf);
+                        g.DrawString(text, lf, lb, x - size.Width / 2, area.Bottom + 4);
+                    }
+                }
+            }
+        }
+
+        private void DrawSeries(Graphics g, Rectangle area, List<DailyPoint> data, decimal yMax, Color color, bool dashed)
+        {
+            if (data.Count < 2) return;
+            var pts = new PointF[data.Count];
+            for (int i = 0; i < data.Count; i++)
+            {
+                float x = area.Left + (i / (float)(data.Count - 1)) * area.Width;
+                float y = area.Bottom - (float)((double)(data[i].Value / yMax) * area.Height);
+                pts[i] = new PointF(x, y);
+            }
+            using (var pen = new Pen(color, 2.4f))
+            {
+                if (dashed) pen.DashStyle = DashStyle.Dash;
+                g.DrawLines(pen, pts);
+            }
+            if (!dashed)
+                using (var b = new SolidBrush(color))
+                    foreach (var p in pts) g.FillEllipse(b, p.X - 2.5f, p.Y - 2.5f, 5f, 5f);
+        }
+
+        private void DrawLineLegend(Graphics g, int x, int y)
+        {
+            using (var f = new Font("Segoe UI", 8.5F))
+            using (var tb = new SolidBrush(Color.FromArgb(60, 60, 60)))
+            {
+                using (var pen = new Pen(Color.FromArgb(235, 107, 60), 2.4f))
+                using (var br = new SolidBrush(Color.FromArgb(235, 107, 60)))
+                {
+                    g.DrawLine(pen, x, y + 6, x + 18, y + 6);
+                    g.FillEllipse(br, x + 7, y + 4, 5, 5);
+                }
+                g.DrawString("текущий период", f, tb, x + 22, y);
+                using (var pen = new Pen(Color.FromArgb(180, 180, 180), 2.4f) { DashStyle = DashStyle.Dash })
+                    g.DrawLine(pen, x, y + 22, x + 18, y + 22);
+                g.DrawString("прошлый период", f, tb, x + 22, y + 16);
+            }
+        }
+
+        private void DrawHorizontalBars(Graphics g, Rectangle area, List<BarItem> items, int leftLabelOffset)
+        {
+            if (items == null || items.Count == 0) { DrawEmpty(g, area, "Нет данных"); return; }
+            decimal max = 0;
+            foreach (var it in items) if (it.Value > max) max = it.Value;
+            if (max <= 0) max = 1;
+            int n = items.Count;
+            int rowH = area.Height / Math.Max(n, 1);
+            int barH = (int)(rowH * 0.55);
+
+            using (var lf = new Font("Segoe UI", 9F))
+            using (var lb = new SolidBrush(Color.FromArgb(60, 60, 60)))
+            using (var vf = new Font("Segoe UI", 9F, FontStyle.Bold))
+            using (var vb = new SolidBrush(Color.FromArgb(40, 40, 40)))
+            using (var bg = new SolidBrush(Color.FromArgb(245, 245, 245)))
+            using (var fg = new SolidBrush(Color.FromArgb(235, 107, 60)))
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    int y = area.Top + i * rowH + (rowH - barH) / 2;
+                    int barW = (int)((double)(items[i].Value / max) * area.Width * 0.8);
+                    if (barW < 1) barW = 1;
+                    string label = TrimText(g, items[i].Label, lf, area.Left - leftLabelOffset - 8);
+                    var size = g.MeasureString(label, lf);
+                    g.DrawString(label, lf, lb, leftLabelOffset, y + (barH - size.Height) / 2);
+                    g.FillRectangle(bg, area.Left, y, area.Width, barH);
+                    g.FillRectangle(fg, area.Left, y, barW, barH);
+                    string vt = ShortMoney(items[i].Value);
+                    var vs = g.MeasureString(vt, vf);
+                    g.DrawString(vt, vf, vb, area.Left + barW + 6, y + (barH - vs.Height) / 2);
+                }
+            }
+        }
+
+        private void DrawPie(Graphics g, Rectangle outer, List<PieSlice> slices)
+        {
+            if (slices == null || slices.Count == 0) { DrawEmpty(g, outer, "Нет данных"); return; }
+            decimal total = 0; foreach (var s in slices) total += s.Value;
+            if (total <= 0) { DrawEmpty(g, outer, "Нет данных"); return; }
+
+            int legendW = 170;
+            int diameter = Math.Min(outer.Height, outer.Width - legendW - 24);
+            if (diameter < 60) diameter = 60;
+            var pieRect = new Rectangle(outer.X, outer.Y + (outer.Height - diameter) / 2, diameter, diameter);
+
+            float startAngle = -90f;
+            foreach (var slice in slices)
+            {
+                float sweep = (float)((double)(slice.Value / total) * 360);
+                using (var brush = new SolidBrush(slice.Color)) g.FillPie(brush, pieRect, startAngle, sweep);
+                startAngle += sweep;
+            }
+            using (var brush = new SolidBrush(Color.White))
+            {
+                int inset = diameter / 4;
+                g.FillEllipse(brush, pieRect.X + inset, pieRect.Y + inset, diameter - 2 * inset, diameter - 2 * inset);
+            }
+            using (var tf = new Font("Segoe UI", 11F, FontStyle.Bold))
+            using (var tb = new SolidBrush(Color.FromArgb(40, 40, 40)))
+            using (var sf = new Font("Segoe UI", 8F))
+            using (var sb = new SolidBrush(Color.Gray))
+            {
+                string totalText = ((int)total).ToString("N0", Ru);
+                var s1 = g.MeasureString(totalText, tf);
+                g.DrawString(totalText, tf, tb,
+                    pieRect.X + (pieRect.Width - s1.Width) / 2,
+                    pieRect.Y + pieRect.Height / 2 - s1.Height);
+                string sub = "заказов";
+                var s2 = g.MeasureString(sub, sf);
+                g.DrawString(sub, sf, sb,
+                    pieRect.X + (pieRect.Width - s2.Width) / 2,
+                    pieRect.Y + pieRect.Height / 2 + 2);
+            }
+
+            int lx = pieRect.Right + 16;
+            int ly = pieRect.Top + 4;
+            using (var nf = new Font("Segoe UI", 9F))
+            using (var nb = new SolidBrush(Color.FromArgb(60, 60, 60)))
+            using (var pf = new Font("Segoe UI", 9F, FontStyle.Bold))
+            using (var pb = new SolidBrush(Color.FromArgb(40, 40, 40)))
+            {
+                foreach (var slice in slices)
+                {
+                    using (var brush = new SolidBrush(slice.Color)) g.FillRectangle(brush, lx, ly + 4, 12, 12);
+                    string name = TrimText(g, slice.Label, nf, outer.Right - lx - 60);
+                    g.DrawString(name, nf, nb, lx + 18, ly);
+                    decimal pct = total > 0 ? slice.Value / total * 100m : 0;
+                    string pctText = $"{pct:0.0}%";
+                    var ps = g.MeasureString(pctText, pf);
+                    g.DrawString(pctText, pf, pb, outer.Right - ps.Width - 8, ly);
+                    ly += 22;
+                }
+            }
+        }
+
+        private void DrawEmpty(Graphics g, Rectangle area, string text)
+        {
+            using (var f = new Font("Segoe UI", 10F))
+            using (var b = new SolidBrush(Color.Gray))
+            {
+                var s = g.MeasureString(text, f);
+                g.DrawString(text, f, b, area.X + (area.Width - s.Width) / 2, area.Y + (area.Height - s.Height) / 2);
+            }
+        }
+
+        private string TrimText(Graphics g, string text, Font font, float maxWidth)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            if (g.MeasureString(text, font).Width <= maxWidth) return text;
+            string t = text;
+            while (t.Length > 1 && g.MeasureString(t + "…", font).Width > maxWidth) t = t.Substring(0, t.Length - 1);
+            return t + "…";
+        }
+
+        private decimal NiceStep(decimal raw)
+        {
+            if (raw <= 0) return 1;
+            double exp = Math.Floor(Math.Log10((double)raw));
+            double pow = Math.Pow(10, exp);
+            double m = (double)raw / pow;
+            double nice = m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10;
+            return (decimal)(nice * pow);
+        }
+
+        private string ShortMoney(decimal v)
+        {
+            if (Math.Abs(v) >= 1_000_000m) return (v / 1_000_000m).ToString("0.#", Ru) + " млн ₽";
+            if (Math.Abs(v) >= 1000m) return (v / 1000m).ToString("0.#", Ru) + " тыс. ₽";
+            return v.ToString("0", Ru) + " ₽";
+        }
+
+        // ====== Кнопки ======
+        private void presetWeekButton_Click(object sender, EventArgs e) => SetPeriod(7);
+        private void presetMonthButton_Click(object sender, EventArgs e) => SetPeriod(30);
+        private void presetQuarterButton_Click(object sender, EventArgs e) => SetPeriod(90);
+        private void presetYearButton_Click(object sender, EventArgs e) => SetPeriod(365);
+        private void SetPeriod(int days)
+        {
+            reportFromDatePicker.Value = DateTime.Today.AddDays(-(days - 1));
+            reportToDatePicker.Value = DateTime.Today;
+            ReloadData();
+        }
+        private void refreshButton_Click(object sender, EventArgs e) => ReloadData();
+        private void reportFromDatePicker_ValueChanged(object sender, EventArgs e) { }
+        private void reportToDatePicker_ValueChanged(object sender, EventArgs e) { }
+        private void menuButton_Click(object sender, EventArgs e) => this.Close();
+
+        // ====== PDF ======
+        private void pdfButton_Click(object sender, EventArgs e)
+        {
+            try { ExportToPdf(); }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при экспорте в PDF: {ex.Message}", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ExportToPdf()
+        {
+            using (var sfd = new SaveFileDialog())
+            {
+                sfd.Filter = "PDF файл (*.pdf)|*.pdf";
+                sfd.FileName = $"Аналитика_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
+                sfd.CheckPathExists = true;
+                sfd.OverwritePrompt = true;
+                if (sfd.ShowDialog() != DialogResult.OK) return;
+
+                string path = SanitizeFileName(sfd.FileName);
+                string dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                if (File.Exists(path)) File.Delete(path);
+
+                BuildPdfFile(path);
+
+                MessageBox.Show($"PDF сохранён:\n{path}", "Готово",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        private string SanitizeFileName(string path)
+        {
+            string dir = Path.GetDirectoryName(path) ?? "";
+            string name = Path.GetFileName(path);
+            foreach (char c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
+            name = name.Replace(' ', '_').Replace('№', 'N');
+            return string.IsNullOrEmpty(dir) ? name : Path.Combine(dir, name);
+        }
+
+        // Собираем PDF напрямую (без принтера и каких-либо диалогов).
+        // Рендерим дашборд в высокоразрешающий bitmap → встраиваем JPEG в одностраничный PDF.
+        private void BuildPdfFile(string outputPath)
+        {
+            const int pageWPt = 842; // A4 landscape: 297×210 мм = 842×595 pt
+            const int pageHPt = 595;
+            const int dpi = 200;
+            int pxW = pageWPt * dpi / 72;
+            int pxH = pageHPt * dpi / 72;
+
+            using (var bmp = new Bitmap(pxW, pxH))
+            {
+                bmp.SetResolution(dpi, dpi);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                    g.PageUnit = GraphicsUnit.Point;
+                    g.PageScale = 1f;
+                    g.FillRectangle(Brushes.White, 0, 0, pageWPt, pageHPt);
+
+                    Rectangle bounds = new Rectangle(40, 40, pageWPt - 80, pageHPt - 80);
+                    RenderDashboardToGraphics(g, bounds);
+                }
+                WritePdfFromBitmap(bmp, outputPath, pageWPt, pageHPt);
+            }
+        }
+
+        private void RenderDashboardToGraphics(Graphics g, Rectangle bounds)
+        {
+            int x = bounds.Left, y = bounds.Top;
+            using (var tf = new Font("Segoe UI", 18F, FontStyle.Bold))
+            using (var sf = new Font("Segoe UI", 10F))
+            using (var tb = new SolidBrush(Color.FromArgb(40, 40, 40)))
+            using (var sb = new SolidBrush(Color.Gray))
+            {
+                g.DrawString("Аналитика и отчёты", tf, tb, x, y); y += 32;
+                g.DrawString($"Период: {reportFromDatePicker.Value:dd.MM.yyyy} — {reportToDatePicker.Value:dd.MM.yyyy}", sf, sb, x, y); y += 18;
+                g.DrawString($"Сформирован: {DateTime.Now:dd.MM.yyyy HH:mm}", sf, sb, x, y); y += 22;
+            }
+
+            string[] titles = { kpi1Title.Text, kpi2Title.Text, kpi3Title.Text, kpi4Title.Text };
+            string[] values = { kpi1Value.Text, kpi2Value.Text, kpi3Value.Text, kpi4Value.Text };
+            string[] deltas = { kpi1Delta.Text, kpi2Delta.Text, kpi3Delta.Text, kpi4Delta.Text };
+            Color[] dCol = { kpi1Delta.ForeColor, kpi2Delta.ForeColor, kpi3Delta.ForeColor, kpi4Delta.ForeColor };
+            int cardW = (bounds.Width - 24) / 4, cardH = 80;
+            for (int i = 0; i < 4; i++)
+            {
+                Rectangle r = new Rectangle(x + i * (cardW + 8), y, cardW, cardH);
+                using (var border = new Pen(Color.FromArgb(220, 220, 220))) g.DrawRectangle(border, r);
+                using (var accent = new SolidBrush(Color.FromArgb(235, 107, 60))) g.FillRectangle(accent, r.X, r.Y, 3, r.Height);
+                using (var titleFont = new Font("Segoe UI", 9F))
+                using (var titleBrush = new SolidBrush(Color.Gray))
+                using (var vf = new Font("Segoe UI", 16F, FontStyle.Bold))
+                using (var vb = new SolidBrush(Color.FromArgb(40, 40, 40)))
+                using (var df = new Font("Segoe UI", 8.5F))
+                using (var db = new SolidBrush(dCol[i]))
+                {
+                    g.DrawString(titles[i], titleFont, titleBrush, r.X + 12, r.Y + 8);
+                    g.DrawString(values[i], vf, vb, r.X + 10, r.Y + 26);
+                    g.DrawString(deltas[i], df, db, r.X + 12, r.Y + 56);
+                }
+            }
+            y += cardH + 16;
+            int remH = bounds.Bottom - y;
+            int leftW = (int)(bounds.Width * 0.62);
+            int rightW = bounds.Width - leftW - 12;
+            int topH = remH * 55 / 100;
+            int botH = remH - topH - 12;
+
+            DrawPdfFrame(g, new Rectangle(x, y, leftW, topH), "Выручка по дням", out var revArea);
+            DrawLineChart(g, revArea, revenueCurrent, revenuePrior);
+
+            DrawPdfFrame(g, new Rectangle(x + leftW + 12, y, rightW, topH), "Распределение по статусам", out var pieOuter);
+            DrawPie(g, pieOuter, statusSlices);
+
+            int y2 = y + topH + 12;
+            DrawPdfFrame(g, new Rectangle(x, y2, leftW, botH), "Топ-5 товаров по выручке", out var barsArea);
+            DrawHorizontalBars(g, new Rectangle(barsArea.X + 170, barsArea.Y, barsArea.Width - 180, barsArea.Height), topProducts, barsArea.X);
+
+            DrawPdfFrame(g, new Rectangle(x + leftW + 12, y2, rightW, botH), "Топ-5 клиентов по выручке", out var clArea);
+            DrawTopClientsTable(g, clArea);
+        }
+
+        private static void WritePdfFromBitmap(Bitmap bmp, string path, int pageWPt, int pageHPt)
+        {
+            byte[] jpegBytes;
+            using (var ms = new MemoryStream())
+            {
+                var encoder = ImageCodecInfo.GetImageEncoders().FirstOrDefault(c => c.MimeType == "image/jpeg");
+                if (encoder != null)
+                {
+                    using (var encParams = new EncoderParameters(1))
+                    {
+                        encParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 88L);
+                        bmp.Save(ms, encoder, encParams);
+                    }
                 }
                 else
                 {
-                    MessageBox.Show("Нет данных для выбранного отчета за указанный период", "Информация",
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    bmp.Save(ms, ImageFormat.Jpeg);
                 }
+                jpegBytes = ms.ToArray();
             }
-            catch (Exception ex)
+            int wPx = bmp.Width;
+            int hPx = bmp.Height;
+
+            string contentStream = $"q\n{pageWPt} 0 0 {pageHPt} 0 0 cm\n/Im0 Do\nQ\n";
+            byte[] contentBytes = Encoding.ASCII.GetBytes(contentStream);
+
+            using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write))
             {
-                MessageBox.Show($"Ошибка генерации отчета: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                long[] offsets = new long[6];
+
+                WriteAscii(fs, "%PDF-1.4\n");
+                fs.Write(new byte[] { 0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A }, 0, 6);
+
+                offsets[1] = fs.Position;
+                WriteAscii(fs, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+                offsets[2] = fs.Position;
+                WriteAscii(fs, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+                offsets[3] = fs.Position;
+                WriteAscii(fs,
+                    "3 0 obj\n<< /Type /Page /Parent 2 0 R " +
+                    $"/MediaBox [0 0 {pageWPt} {pageHPt}] " +
+                    "/Resources << /XObject << /Im0 4 0 R >> /ProcSet [/PDF /ImageC] >> " +
+                    "/Contents 5 0 R >>\nendobj\n");
+
+                offsets[4] = fs.Position;
+                WriteAscii(fs,
+                    $"4 0 obj\n<< /Type /XObject /Subtype /Image /Width {wPx} /Height {hPx} " +
+                    $"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length {jpegBytes.Length} >>\nstream\n");
+                fs.Write(jpegBytes, 0, jpegBytes.Length);
+                WriteAscii(fs, "\nendstream\nendobj\n");
+
+                offsets[5] = fs.Position;
+                WriteAscii(fs, $"5 0 obj\n<< /Length {contentBytes.Length} >>\nstream\n");
+                fs.Write(contentBytes, 0, contentBytes.Length);
+                WriteAscii(fs, "endstream\nendobj\n");
+
+                long xrefPos = fs.Position;
+                WriteAscii(fs, "xref\n0 6\n");
+                WriteAscii(fs, "0000000000 65535 f \n");
+                for (int i = 1; i <= 5; i++)
+                    WriteAscii(fs, offsets[i].ToString("D10") + " 00000 n \n");
+
+                WriteAscii(fs, $"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xrefPos}\n%%EOF\n");
             }
         }
 
-        private void ApplyColumnHeaders(string reportType)
+        private static void WriteAscii(Stream s, string text)
         {
-            switch (reportType)
-            {
-                case "Отчет по заказам":
-                    if (reportsDataGridView.Columns.Contains("order_number"))
-                        reportsDataGridView.Columns["order_number"].HeaderText = "Номер заказа";
-                    if (reportsDataGridView.Columns.Contains("client_name"))
-                        reportsDataGridView.Columns["client_name"].HeaderText = "Клиент";
-                    if (reportsDataGridView.Columns.Contains("product_name"))
-                        reportsDataGridView.Columns["product_name"].HeaderText = "Товар";
-                    if (reportsDataGridView.Columns.Contains("status_name"))
-                        reportsDataGridView.Columns["status_name"].HeaderText = "Статус";
-                    if (reportsDataGridView.Columns.Contains("date_of_creation"))
-                        reportsDataGridView.Columns["date_of_creation"].HeaderText = "Дата создания";
-                    if (reportsDataGridView.Columns.Contains("date_of_completion"))
-                        reportsDataGridView.Columns["date_of_completion"].HeaderText = "Дата завершения";
-                    if (reportsDataGridView.Columns.Contains("discount"))
-                        reportsDataGridView.Columns["discount"].HeaderText = "Скидка (%)";
-                    if (reportsDataGridView.Columns.Contains("total_amount"))
-                        reportsDataGridView.Columns["total_amount"].HeaderText = "Сумма (руб.)";
-                    if (reportsDataGridView.Columns.Contains("final_amount"))
-                        reportsDataGridView.Columns["final_amount"].HeaderText = "Итог (руб.)";
-                    break;
-
-                case "Отчет по продажам":
-                    if (reportsDataGridView.Columns.Contains("product_name"))
-                        reportsDataGridView.Columns["product_name"].HeaderText = "Товар";
-                    if (reportsDataGridView.Columns.Contains("category_name"))
-                        reportsDataGridView.Columns["category_name"].HeaderText = "Категория";
-                    if (reportsDataGridView.Columns.Contains("total_quantity"))
-                        reportsDataGridView.Columns["total_quantity"].HeaderText = "Количество";
-                    if (reportsDataGridView.Columns.Contains("total_revenue"))
-                        reportsDataGridView.Columns["total_revenue"].HeaderText = "Выручка (руб.)";
-                    if (reportsDataGridView.Columns.Contains("avg_price"))
-                        reportsDataGridView.Columns["avg_price"].HeaderText = "Средняя цена (руб.)";
-                    break;
-
-                case "Отчет по клиентам":
-                    if (reportsDataGridView.Columns.Contains("fio"))
-                        reportsDataGridView.Columns["fio"].HeaderText = "ФИО";
-                    if (reportsDataGridView.Columns.Contains("phone"))
-                        reportsDataGridView.Columns["phone"].HeaderText = "Телефон";
-                    if (reportsDataGridView.Columns.Contains("orders_count"))
-                        reportsDataGridView.Columns["orders_count"].HeaderText = "Кол-во заказов";
-                    if (reportsDataGridView.Columns.Contains("total_spent"))
-                        reportsDataGridView.Columns["total_spent"].HeaderText = "Потрачено (руб.)";
-                    if (reportsDataGridView.Columns.Contains("last_order_date"))
-                        reportsDataGridView.Columns["last_order_date"].HeaderText = "Последний заказ";
-                    break;
-
-                case "Отчет по товарам":
-                    if (reportsDataGridView.Columns.Contains("name"))
-                        reportsDataGridView.Columns["name"].HeaderText = "Наименование";
-                    if (reportsDataGridView.Columns.Contains("article"))
-                        reportsDataGridView.Columns["article"].HeaderText = "Артикул";
-                    if (reportsDataGridView.Columns.Contains("category_name"))
-                        reportsDataGridView.Columns["category_name"].HeaderText = "Категория";
-                    if (reportsDataGridView.Columns.Contains("price"))
-                        reportsDataGridView.Columns["price"].HeaderText = "Цена (руб.)";
-                    if (reportsDataGridView.Columns.Contains("sold_quantity"))
-                        reportsDataGridView.Columns["sold_quantity"].HeaderText = "Продано (шт.)";
-                    break;
-            }
-
-            // Скрываем служебные поля
-            HideTechnicalColumns();
+            byte[] b = Encoding.ASCII.GetBytes(text);
+            s.Write(b, 0, b.Length);
         }
 
-        private void HideTechnicalColumns()
+        private void DrawPdfFrame(Graphics g, Rectangle outer, string title, out Rectangle inner)
         {
-            string[] technicalColumns = { "id", "client_id", "product_id", "status_id", "category_id" };
+            using (var border = new Pen(Color.FromArgb(220, 220, 220))) g.DrawRectangle(border, outer);
+            using (var tf = new Font("Segoe UI", 10F, FontStyle.Bold))
+            using (var tb = new SolidBrush(Color.FromArgb(40, 40, 40)))
+                g.DrawString(title, tf, tb, outer.X + 10, outer.Y + 8);
+            inner = new Rectangle(outer.X + 50, outer.Y + 38, outer.Width - 60, outer.Height - 50);
+        }
 
-            foreach (var colName in technicalColumns)
+        private void DrawTopClientsTable(Graphics g, Rectangle area)
+        {
+            var dt = topClientsGridView.DataSource as DataTable;
+            if (dt == null || dt.Rows.Count == 0) { DrawEmpty(g, area, "Нет данных"); return; }
+            int colW1 = area.Width * 55 / 100;
+            int colW2 = area.Width * 18 / 100;
+            int rowH = (int)(area.Height / (dt.Rows.Count + 1.5));
+            if (rowH < 18) rowH = 18; if (rowH > 32) rowH = 32;
+
+            int y = area.Top;
+            using (var hf = new Font("Segoe UI", 9F, FontStyle.Bold))
+            using (var hb = new SolidBrush(Color.FromArgb(40, 40, 40)))
+            using (var bg = new SolidBrush(Color.FromArgb(252, 238, 228)))
+            using (var rf = new Font("Segoe UI", 9F))
+            using (var rb = new SolidBrush(Color.FromArgb(60, 60, 60)))
+            using (var br = new Pen(Color.FromArgb(230, 230, 230)))
             {
-                if (reportsDataGridView.Columns.Contains(colName))
+                g.FillRectangle(bg, area.X, y, area.Width, rowH);
+                g.DrawString("Клиент", hf, hb, area.X + 8, y + 4);
+                g.DrawString("Заказы", hf, hb, area.X + colW1 + 8, y + 4);
+                g.DrawString("Сумма", hf, hb, area.X + colW1 + colW2 + 8, y + 4);
+                y += rowH;
+                for (int i = 0; i < dt.Rows.Count; i++)
                 {
-                    reportsDataGridView.Columns[colName].Visible = false;
+                    if (y + rowH > area.Bottom) break;
+                    g.DrawLine(br, area.X, y + rowH, area.Right, y + rowH);
+                    string fio = TrimText(g, dt.Rows[i][0]?.ToString(), rf, colW1 - 12);
+                    g.DrawString(fio, rf, rb, area.X + 8, y + 4);
+                    g.DrawString(dt.Rows[i][1]?.ToString(), rf, rb, area.X + colW1 + 8, y + 4);
+                    g.DrawString(dt.Rows[i][2]?.ToString(), rf, rb, area.X + colW1 + colW2 + 8, y + 4);
+                    y += rowH;
                 }
             }
         }
 
-        private DataTable GenerateOrdersReport()
-        {
-            using (var connection = dbHelper.GetConnection())
-            {
-                connection.Open();
-                string query = @"SELECT o.order_number, c.fio as client_name, 
-                                p.name as product_name, s.name as status_name,
-                                o.date_of_creation, o.date_of_completion,
-                                o.discount, o.total_amount, o.final_amount
-                                FROM orders o
-                                INNER JOIN clients c ON o.client_id = c.id
-                                INNER JOIN products p ON o.product_id = p.id
-                                INNER JOIN statuses s ON o.status_id = s.id
-                                WHERE o.date_of_creation BETWEEN @from_date AND @to_date
-                                ORDER BY o.date_of_creation DESC";
-
-                using (var command = new MySqlCommand(query, connection))
-                {
-                    command.Parameters.AddWithValue("@from_date", reportFromDatePicker.Value.Date);
-                    command.Parameters.AddWithValue("@to_date", reportToDatePicker.Value.Date.AddDays(1));
-
-                    using (var adapter = new MySqlDataAdapter(command))
-                    {
-                        DataTable dt = new DataTable();
-                        adapter.Fill(dt);
-                        return dt;
-                    }
-                }
-            }
-        }
-
-        private DataTable GenerateSalesReport()
-        {
-            using (var connection = dbHelper.GetConnection())
-            {
-                connection.Open();
-                string query = @"SELECT p.name as product_name, c.name as category_name,
-                                SUM(oi.quantity) as total_quantity,
-                                SUM(oi.total) as total_revenue,
-                                AVG(oi.price) as avg_price
-                                FROM order_items oi
-                                INNER JOIN products p ON oi.product_id = p.id
-                                INNER JOIN categories c ON p.category_id = c.id
-                                INNER JOIN orders o ON oi.order_id = o.id
-                                WHERE o.date_of_creation BETWEEN @from_date AND @to_date
-                                GROUP BY p.name, c.name
-                                ORDER BY total_revenue DESC";
-
-                using (var command = new MySqlCommand(query, connection))
-                {
-                    command.Parameters.AddWithValue("@from_date", reportFromDatePicker.Value.Date);
-                    command.Parameters.AddWithValue("@to_date", reportToDatePicker.Value.Date.AddDays(1));
-
-                    using (var adapter = new MySqlDataAdapter(command))
-                    {
-                        DataTable dt = new DataTable();
-                        adapter.Fill(dt);
-                        return dt;
-                    }
-                }
-            }
-        }
-
-        private DataTable GenerateClientsReport()
-        {
-            using (var connection = dbHelper.GetConnection())
-            {
-                connection.Open();
-                string query = @"SELECT c.fio, c.phone,
-                                COUNT(o.id) as orders_count,
-                                SUM(o.final_amount) as total_spent,
-                                MAX(o.date_of_creation) as last_order_date
-                                FROM clients c
-                                LEFT JOIN orders o ON c.id = o.client_id
-                                WHERE (o.date_of_creation BETWEEN @from_date AND @to_date 
-                                       OR o.date_of_creation IS NULL)
-                                GROUP BY c.fio, c.phone
-                                ORDER BY total_spent DESC";
-
-                using (var command = new MySqlCommand(query, connection))
-                {
-                    command.Parameters.AddWithValue("@from_date", reportFromDatePicker.Value.Date);
-                    command.Parameters.AddWithValue("@to_date", reportToDatePicker.Value.Date.AddDays(1));
-
-                    using (var adapter = new MySqlDataAdapter(command))
-                    {
-                        DataTable dt = new DataTable();
-                        adapter.Fill(dt);
-                        return dt;
-                    }
-                }
-            }
-        }
-
-        private DataTable GenerateProductsReport()
-        {
-            using (var connection = dbHelper.GetConnection())
-            {
-                connection.Open();
-                string query = @"SELECT p.name, p.article, c.name as category_name,
-                                p.price,
-                                (SELECT SUM(quantity) FROM order_items oi 
-                                 INNER JOIN orders o ON oi.order_id = o.id 
-                                 WHERE oi.product_id = p.id 
-                                 AND o.date_of_creation BETWEEN @from_date AND @to_date) as sold_quantity
-                                FROM products p
-                                INNER JOIN categories c ON p.category_id = c.id
-                                ORDER BY p.name";
-
-                using (var command = new MySqlCommand(query, connection))
-                {
-                    command.Parameters.AddWithValue("@from_date", reportFromDatePicker.Value.Date);
-                    command.Parameters.AddWithValue("@to_date", reportToDatePicker.Value.Date.AddDays(1));
-
-                    using (var adapter = new MySqlDataAdapter(command))
-                    {
-                        DataTable dt = new DataTable();
-                        adapter.Fill(dt);
-                        return dt;
-                    }
-                }
-            }
-        }
-
-        private void CalculateTotals(DataTable data, string reportType)
-        {
-            decimal totalAmount = 0;
-            int totalCount = data.Rows.Count;
-
-            switch (reportType)
-            {
-                case "Отчет по заказам":
-                    foreach (DataRow row in data.Rows)
-                    {
-                        if (row["final_amount"] != DBNull.Value)
-                        {
-                            totalAmount += Convert.ToDecimal(row["final_amount"]);
-                        }
-                    }
-                    break;
-
-                case "Отчет по продажам":
-                    foreach (DataRow row in data.Rows)
-                    {
-                        if (row["total_revenue"] != DBNull.Value)
-                        {
-                            totalAmount += Convert.ToDecimal(row["total_revenue"]);
-                        }
-                    }
-                    break;
-
-                case "Отчет по клиентам":
-                    foreach (DataRow row in data.Rows)
-                    {
-                        if (row["total_spent"] != DBNull.Value)
-                        {
-                            totalAmount += Convert.ToDecimal(row["total_spent"]);
-                        }
-                    }
-                    break;
-            }
-
-            totalsLabel.Text = $"Всего записей: {totalCount} | Общая сумма: {totalAmount:C2}";
-        }
-
-        private void printToWordButton_Click(object sender, EventArgs e)
-        {
-            if (reportsDataGridView.DataSource == null)
-            {
-                MessageBox.Show("Нет данных для печати", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            try
-            {
-                ExportToWord();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка при экспорте в Word: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void printToExcelButton_Click(object sender, EventArgs e)
-        {
-            if (reportsDataGridView.DataSource == null)
-            {
-                MessageBox.Show("Нет данных для печати", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            try
-            {
-                ExportToExcel();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка при экспорте в Excel: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void ExportToWord()
-        {
-            try
-            {
-                // Используем Interop для работы с Word
-                var wordApp = new Microsoft.Office.Interop.Word.Application();
-                var doc = wordApp.Documents.Add();
-                wordApp.Visible = true;
-
-                // Заголовок отчета
-                var reportType = reportTypeComboBox.SelectedItem.ToString();
-                var range = doc.Range(0, 0);
-                range.Text = $"{reportType}\n";
-                range.Font.Name = "Times New Roman";
-                range.Font.Size = 16;
-                range.Font.Bold = 1;
-                range.ParagraphFormat.Alignment = Microsoft.Office.Interop.Word.WdParagraphAlignment.wdAlignParagraphCenter;
-
-                // Период
-                range = doc.Range(range.End, range.End);
-                range.Text = $"Период: {reportFromDatePicker.Value:dd.MM.yyyy} - {reportToDatePicker.Value:dd.MM.yyyy}\n\n";
-                range.Font.Name = "Times New Roman";
-                range.Font.Size = 12;
-                range.ParagraphFormat.Alignment = Microsoft.Office.Interop.Word.WdParagraphAlignment.wdAlignParagraphCenter;
-
-                // Таблица с данными
-                DataTable dataTable = (DataTable)reportsDataGridView.DataSource;
-
-                // Создаем таблицу в Word
-                range = doc.Range(doc.Content.End - 1, doc.Content.End - 1);
-                var table = doc.Tables.Add(range, dataTable.Rows.Count + 1, dataTable.Columns.Count);
-                table.Borders.Enable = 1;
-                table.Range.Font.Name = "Times New Roman";
-                table.Range.Font.Size = 10;
-
-                // Заполняем заголовки таблицы
-                for (int i = 0; i < dataTable.Columns.Count; i++)
-                {
-                    if (reportsDataGridView.Columns[i].Visible)
-                    {
-                        table.Cell(1, i + 1).Range.Text = reportsDataGridView.Columns[i].HeaderText;
-                        table.Cell(1, i + 1).Range.Font.Bold = 1;
-                    }
-                }
-
-                // Заполняем данные таблицы
-                for (int row = 0; row < dataTable.Rows.Count; row++)
-                {
-                    for (int col = 0; col < dataTable.Columns.Count; col++)
-                    {
-                        if (reportsDataGridView.Columns[col].Visible)
-                        {
-                            var cellValue = dataTable.Rows[row][col].ToString();
-                            table.Cell(row + 2, col + 1).Range.Text = cellValue;
-                        }
-                    }
-                }
-
-                // Итоги
-                range = doc.Range(doc.Content.End - 1, doc.Content.End - 1);
-                range.Text = $"\n{totalsLabel.Text}\n";
-                range.Font.Name = "Times New Roman";
-                range.Font.Size = 11;
-                range.Font.Bold = 1;
-
-                // Дата создания отчета
-                range = doc.Range(doc.Content.End - 1, doc.Content.End - 1);
-                range.Text = $"Отчет создан: {DateTime.Now:dd.MM.yyyy HH:mm}\n";
-                range.Font.Name = "Times New Roman";
-                range.Font.Size = 10;
-                range.Font.Italic = 1;
-
-                MessageBox.Show("Отчет успешно сформирован в Word", "Успех",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch
-            {
-                // Если Interop не доступен, создаем простой текстовый файл
-                SaveToTextFile("Word");
-            }
-        }
-
-        private void ExportToExcel()
-        {
-            if (reportsDataGridView.DataSource == null)
-            {
-                MessageBox.Show("Нет данных для экспорта", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            try
-            {
-                // Создаем временный файл
-                string tempFile = Path.GetTempPath() + $"{reportTypeComboBox.SelectedItem}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
-
-                // Используем Excel Interop для полного контроля
-                var excelApp = new Microsoft.Office.Interop.Excel.Application();
-                var workbook = excelApp.Workbooks.Add();
-                var worksheet = workbook.Worksheets[1] as Microsoft.Office.Interop.Excel.Worksheet;
-
-                // Делаем Excel видимым
-                excelApp.Visible = true;
-
-                DataTable dataTable = (DataTable)reportsDataGridView.DataSource;
-
-                // Заголовок отчета
-                worksheet.Cells[1, 1] = $"{reportTypeComboBox.SelectedItem}";
-                worksheet.Range["A1", "Z1"].Merge();
-                worksheet.Cells[1, 1].Font.Bold = true;
-                worksheet.Cells[1, 1].Font.Size = 14;
-                worksheet.Cells[1, 1].HorizontalAlignment = Microsoft.Office.Interop.Excel.XlHAlign.xlHAlignCenter;
-
-                // Период
-                worksheet.Cells[2, 1] = $"Период: {reportFromDatePicker.Value:dd.MM.yyyy} - {reportToDatePicker.Value:dd.MM.yyyy}";
-                worksheet.Range["A2", "Z2"].Merge();
-                worksheet.Cells[2, 1].Font.Size = 12;
-                worksheet.Cells[2, 1].HorizontalAlignment = Microsoft.Office.Interop.Excel.XlHAlign.xlHAlignCenter;
-
-                // Пустая строка
-                int startRow = 4;
-
-                // Заголовки столбцов
-                int col = 1;
-                for (int i = 0; i < reportsDataGridView.Columns.Count; i++)
-                {
-                    if (reportsDataGridView.Columns[i].Visible)
-                    {
-                        worksheet.Cells[startRow, col] = reportsDataGridView.Columns[i].HeaderText;
-                        worksheet.Cells[startRow, col].Font.Bold = true;
-                        worksheet.Cells[startRow, col].Interior.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.LightGray);
-                        col++;
-                    }
-                }
-
-                // Данные
-                for (int row = 0; row < dataTable.Rows.Count; row++)
-                {
-                    col = 1;
-                    for (int i = 0; i < reportsDataGridView.Columns.Count; i++)
-                    {
-                        if (reportsDataGridView.Columns[i].Visible)
-                        {
-                            var columnName = reportsDataGridView.Columns[i].DataPropertyName ?? reportsDataGridView.Columns[i].Name;
-                            worksheet.Cells[startRow + row + 1, col] = dataTable.Rows[row][columnName];
-                            col++;
-                        }
-                    }
-                }
-
-                // РАСТЯГИВАЕМ СТОЛБЦЫ ПО СОДЕРЖИМОМУ
-                Microsoft.Office.Interop.Excel.Range usedRange = worksheet.UsedRange;
-                usedRange.Columns.AutoFit();
-
-                // Дополнительные настройки автоподбора
-                foreach (Microsoft.Office.Interop.Excel.Range column in usedRange.Columns)
-                {
-                    column.ColumnWidth = column.ColumnWidth * 1.2; // Добавляем 20% запаса
-                }
-
-                // Сохраняем и закрываем
-                workbook.SaveAs(tempFile);
-
-                // Оставляем Excel открытым
-                // workbook.Close(); // Не закрываем, чтобы пользователь видел файл
-                // excelApp.Quit();
-
-                MessageBox.Show("Отчет открыт в Excel с автоподбором ширины столбцов", "Успех",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка: {ex.Message}\nУбедитесь, что Microsoft Excel установлен.", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void ExportToCsv(string filePath)
-        {
-            DataTable dataTable = (DataTable)reportsDataGridView.DataSource;
-
-            using (StreamWriter writer = new StreamWriter(filePath, false, System.Text.Encoding.UTF8))
-            {
-                // Добавляем BOM для правильного отображения кириллицы в Excel
-                writer.Write('\uFEFF');
-
-                // Собираем видимые столбцы
-                List<DataGridViewColumn> visibleColumns = new List<DataGridViewColumn>();
-                for (int i = 0; i < reportsDataGridView.Columns.Count; i++)
-                {
-                    if (reportsDataGridView.Columns[i].Visible)
-                    {
-                        visibleColumns.Add(reportsDataGridView.Columns[i]);
-                    }
-                }
-
-                // Заголовки столбцов
-                List<string> headers = new List<string>();
-                foreach (var column in visibleColumns)
-                {
-                    headers.Add(column.HeaderText);
-                }
-                writer.WriteLine(string.Join(";", headers));
-
-                // Данные
-                foreach (DataRow row in dataTable.Rows)
-                {
-                    List<string> values = new List<string>();
-                    foreach (var column in visibleColumns)
-                    {
-                        var columnName = column.DataPropertyName;
-                        if (string.IsNullOrEmpty(columnName))
-                        {
-                            columnName = column.Name;
-                        }
-
-                        var value = row[columnName].ToString();
-                        // Экранируем специальные символы
-                        if (value.Contains(";") || value.Contains("\"") || value.Contains("\n"))
-                        {
-                            value = "\"" + value.Replace("\"", "\"\"") + "\"";
-                        }
-                        values.Add(value);
-                    }
-                    writer.WriteLine(string.Join(";", values));
-                }
-
-                // Добавляем информацию об отчете
-                writer.WriteLine();
-                writer.WriteLine(";;"); // Пустая строка
-                writer.WriteLine($"{totalsLabel.Text};");
-                writer.WriteLine($"Отчет создан: {DateTime.Now:dd.MM.yyyy HH:mm};");
-                writer.WriteLine($"Тип отчета: {reportTypeComboBox.SelectedItem};");
-                writer.WriteLine($"Период: {reportFromDatePicker.Value:dd.MM.yyyy} - {reportToDatePicker.Value:dd.MM.yyyy};");
-            }
-        }
-
-        private void ExportToExcelUsingInterop(string filePath)
-        {
-            try
-            {
-                // Используем Excel Interop
-                var excelApp = new Microsoft.Office.Interop.Excel.Application();
-                var workbook = excelApp.Workbooks.Add();
-                var worksheet = workbook.Worksheets[1] as Microsoft.Office.Interop.Excel.Worksheet;
-
-                DataTable dataTable = (DataTable)reportsDataGridView.DataSource;
-
-                // Заголовок отчета
-                var reportType = reportTypeComboBox.SelectedItem.ToString();
-                worksheet.Cells[1, 1] = $"ОТЧЕТ: {reportType}";
-                var headerRange = worksheet.Range["A1", GetExcelColumnName(reportsDataGridView.Columns.Count) + "1"];
-                headerRange.Merge();
-                headerRange.Font.Bold = true;
-                headerRange.Font.Size = 16;
-                headerRange.HorizontalAlignment = Microsoft.Office.Interop.Excel.XlHAlign.xlHAlignCenter;
-
-                // Период
-                worksheet.Cells[2, 1] = $"Период: {reportFromDatePicker.Value:dd.MM.yyyy} - {reportToDatePicker.Value:dd.MM.yyyy}";
-                var periodRange = worksheet.Range["A2", GetExcelColumnName(reportsDataGridView.Columns.Count) + "2"];
-                periodRange.Merge();
-                periodRange.Font.Size = 12;
-                periodRange.HorizontalAlignment = Microsoft.Office.Interop.Excel.XlHAlign.xlHAlignCenter;
-
-                // Заголовки столбцов (строка 4)
-                int row = 4;
-                int col = 1;
-
-                // Собираем видимые столбцы
-                List<DataGridViewColumn> visibleColumns = new List<DataGridViewColumn>();
-                for (int i = 0; i < reportsDataGridView.Columns.Count; i++)
-                {
-                    if (reportsDataGridView.Columns[i].Visible)
-                    {
-                        visibleColumns.Add(reportsDataGridView.Columns[i]);
-                    }
-                }
-
-                // Записываем заголовки
-                foreach (var column in visibleColumns)
-                {
-                    worksheet.Cells[row, col] = column.HeaderText;
-                    var cell = worksheet.Cells[row, col];
-                    cell.Font.Bold = true;
-                    cell.Interior.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.LightGray);
-                    cell.Borders.LineStyle = Microsoft.Office.Interop.Excel.XlLineStyle.xlContinuous;
-                    col++;
-                }
-
-                // Записываем данные
-                row++;
-                foreach (DataRow dataRow in dataTable.Rows)
-                {
-                    col = 1;
-                    foreach (var column in visibleColumns)
-                    {
-                        var columnName = column.DataPropertyName;
-                        if (string.IsNullOrEmpty(columnName))
-                        {
-                            columnName = column.Name;
-                        }
-
-                        var value = dataRow[columnName];
-                        worksheet.Cells[row, col] = value;
-
-                        // Форматирование для числовых полей
-                        if (value is decimal || value is double || value is int || value is float)
-                        {
-                            var cell = worksheet.Cells[row, col];
-                            cell.NumberFormat = "#,##0.00";
-
-                            // Если это денежное поле
-                            if (column.HeaderText.Contains("руб.") ||
-                                column.HeaderText.Contains("Сумма") ||
-                                column.HeaderText.Contains("Цена") ||
-                                column.HeaderText.Contains("Итог"))
-                            {
-                                cell.NumberFormat = "#,##0.00 ₽";
-                            }
-                            else if (column.HeaderText.Contains("Скидка"))
-                            {
-                                cell.NumberFormat = "0%";
-                            }
-                        }
-
-                        var dataCell = worksheet.Cells[row, col];
-                        dataCell.Borders.LineStyle = Microsoft.Office.Interop.Excel.XlLineStyle.xlContinuous;
-                        col++;
-                    }
-                    row++;
-                }
-
-                // Автонастройка ширины столбцов
-                worksheet.Columns.AutoFit();
-
-                // Итоги
-                worksheet.Cells[row + 1, 1] = totalsLabel.Text;
-                var totalsRange = worksheet.Range[worksheet.Cells[row + 1, 1], worksheet.Cells[row + 1, visibleColumns.Count]];
-                totalsRange.Merge();
-                totalsRange.Font.Bold = true;
-                totalsRange.Font.Color = System.Drawing.ColorTranslator.ToOle(System.Drawing.Color.Blue);
-
-                // Дата создания отчета
-                worksheet.Cells[row + 2, 1] = $"Отчет создан: {DateTime.Now:dd.MM.yyyy HH:mm}";
-                var dateRange = worksheet.Range[worksheet.Cells[row + 2, 1], worksheet.Cells[row + 2, visibleColumns.Count]];
-                dateRange.Merge();
-                dateRange.Font.Italic = true;
-
-                // Тип отчета
-                worksheet.Cells[row + 3, 1] = $"Тип отчета: {reportType}";
-                var typeRange = worksheet.Range[worksheet.Cells[row + 3, 1], worksheet.Cells[row + 3, visibleColumns.Count]];
-                typeRange.Merge();
-
-                // Период
-                worksheet.Cells[row + 4, 1] = $"Период: {reportFromDatePicker.Value:dd.MM.yyyy} - {reportToDatePicker.Value:dd.MM.yyyy}";
-                var periodRange2 = worksheet.Range[worksheet.Cells[row + 4, 1], worksheet.Cells[row + 4, visibleColumns.Count]];
-                periodRange2.Merge();
-
-                // Сохраняем файл
-                workbook.SaveAs(filePath);
-                workbook.Close();
-                excelApp.Quit();
-
-                // Освобождаем ресурсы COM
-                System.Runtime.InteropServices.Marshal.ReleaseComObject(worksheet);
-                System.Runtime.InteropServices.Marshal.ReleaseComObject(workbook);
-                System.Runtime.InteropServices.Marshal.ReleaseComObject(excelApp);
-            }
-            catch (Exception)
-            {
-                // Если Interop не работает, сохраняем как CSV
-                string csvPath = Path.ChangeExtension(filePath, ".csv");
-                ExportToCsv(csvPath);
-                throw new Exception($"Не удалось сохранить как Excel файл. Файл сохранен как CSV: {csvPath}");
-            }
-        }
-
-        // Вспомогательный метод для получения имени столбца Excel
-        private string GetExcelColumnName(int columnNumber)
-        {
-            string columnName = "";
-            while (columnNumber > 0)
-            {
-                int modulo = (columnNumber - 1) % 26;
-                columnName = Convert.ToChar('A' + modulo) + columnName;
-                columnNumber = (columnNumber - modulo) / 26;
-            }
-            return columnName;
-        }
-
-        private void ExportToExcelFallback()
-        {
-            SaveFileDialog saveFileDialog = new SaveFileDialog();
-            saveFileDialog.Filter = "CSV файлы (*.csv)|*.csv|Текстовые файлы (*.txt)|*.txt";
-            saveFileDialog.FileName = $"{reportTypeComboBox.SelectedItem}_{DateTime.Now:yyyyMMdd_HHmmss}";
-
-            if (saveFileDialog.ShowDialog() == DialogResult.OK)
-            {
-                DataTable dataTable = (DataTable)reportsDataGridView.DataSource;
-
-                using (StreamWriter writer = new StreamWriter(saveFileDialog.FileName, false, System.Text.Encoding.UTF8))
-                {
-                    // Заголовок отчета
-                    writer.WriteLine($"ОТЧЕТ: {reportTypeComboBox.SelectedItem}");
-                    writer.WriteLine($"Период: {reportFromDatePicker.Value:dd.MM.yyyy} - {reportToDatePicker.Value:dd.MM.yyyy}");
-                    writer.WriteLine();
-
-                    // Заголовки столбцов
-                    List<string> headers = new List<string>();
-                    for (int i = 0; i < reportsDataGridView.Columns.Count; i++)
-                    {
-                        if (reportsDataGridView.Columns[i].Visible)
-                        {
-                            headers.Add(reportsDataGridView.Columns[i].HeaderText);
-                        }
-                    }
-                    writer.WriteLine(string.Join(";", headers));
-
-                    // Данные
-                    foreach (DataRow row in dataTable.Rows)
-                    {
-                        List<string> values = new List<string>();
-                        for (int i = 0; i < reportsDataGridView.Columns.Count; i++)
-                        {
-                            if (reportsDataGridView.Columns[i].Visible)
-                            {
-                                values.Add(row[i].ToString());
-                            }
-                        }
-                        writer.WriteLine(string.Join(";", values));
-                    }
-
-                    // Итоги
-                    writer.WriteLine();
-                    writer.WriteLine(totalsLabel.Text);
-                    writer.WriteLine($"Отчет создан: {DateTime.Now:dd.MM.yyyy HH:mm}");
-                }
-
-                MessageBox.Show($"Отчет сохранен как CSV: {saveFileDialog.FileName}\nОткройте файл в Excel.", "Успех",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-        }
-
-        private void SaveToTextFile(string formatType)
-        {
-            SaveFileDialog saveFileDialog = new SaveFileDialog();
-
-            if (formatType == "Word")
-            {
-                saveFileDialog.Filter = "Документ Word (*.doc)|*.doc|Текстовый файл (*.txt)|*.txt";
-            }
-            else // Excel
-            {
-                saveFileDialog.Filter = "Excel файл (*.csv)|*.csv|Текстовый файл (*.txt)|*.txt";
-            }
-
-            saveFileDialog.FileName = $"{reportTypeComboBox.SelectedItem}_{DateTime.Now:yyyyMMdd_HHmmss}";
-
-            if (saveFileDialog.ShowDialog() == DialogResult.OK)
-            {
-                using (StreamWriter writer = new StreamWriter(saveFileDialog.FileName, false, System.Text.Encoding.UTF8))
-                {
-                    // Заголовок
-                    writer.WriteLine($"{reportTypeComboBox.SelectedItem}");
-                    writer.WriteLine($"Период: {reportFromDatePicker.Value:dd.MM.yyyy} - {reportToDatePicker.Value:dd.MM.yyyy}");
-                    writer.WriteLine(new string('-', 80));
-                    writer.WriteLine();
-
-                    // Заголовки таблицы
-                    DataTable dataTable = (DataTable)reportsDataGridView.DataSource;
-                    foreach (DataColumn column in dataTable.Columns)
-                    {
-                        if (reportsDataGridView.Columns[column.ColumnName].Visible)
-                        {
-                            writer.Write($"{reportsDataGridView.Columns[column.ColumnName].HeaderText}\t");
-                        }
-                    }
-                    writer.WriteLine();
-                    writer.WriteLine(new string('-', 80));
-
-                    // Данные таблицы
-                    foreach (DataRow row in dataTable.Rows)
-                    {
-                        foreach (DataColumn column in dataTable.Columns)
-                        {
-                            if (reportsDataGridView.Columns[column.ColumnName].Visible)
-                            {
-                                writer.Write($"{row[column].ToString()}\t");
-                            }
-                        }
-                        writer.WriteLine();
-                    }
-
-                    // Итоги
-                    writer.WriteLine();
-                    writer.WriteLine(new string('-', 80));
-                    writer.WriteLine(totalsLabel.Text);
-                    writer.WriteLine($"Отчет создан: {DateTime.Now:dd.MM.yyyy HH:mm}");
-                }
-
-                MessageBox.Show($"Отчет успешно сохранен: {saveFileDialog.FileName}", "Успех",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-        }
-
-        private void menuButton_Click(object sender, EventArgs e)
-        {
-            this.Close();
-        }
-
-        private void reportFromDatePicker_ValueChanged(object sender, EventArgs e)
-        {
-            if (reportFromDatePicker.Value > reportToDatePicker.Value)
-            {
-                reportToDatePicker.Value = reportFromDatePicker.Value;
-            }
-        }
-
-        private void reportToDatePicker_ValueChanged(object sender, EventArgs e)
-        {
-            if (reportToDatePicker.Value < reportFromDatePicker.Value)
-            {
-                reportFromDatePicker.Value = reportToDatePicker.Value;
-            }
-        }
+        // ====== Модели ======
+        private class DailyPoint { public DateTime Date; public decimal Value; }
+        private class BarItem { public string Label; public decimal Value; }
+        private class PieSlice { public string Label; public decimal Value; public Color Color; }
     }
 }
