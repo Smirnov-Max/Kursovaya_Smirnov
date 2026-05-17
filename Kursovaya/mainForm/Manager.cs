@@ -9,6 +9,10 @@ namespace Smirnov_kursovaya.mainForm
 {
     public partial class Manager : Form
     {
+        // Флаг, чтобы не показывать подтверждение дважды, когда выход уже
+        // подтверждён через кнопки «Выход» / «Меню».
+        private bool _skipCloseConfirm = false;
+
         public Manager()
         {
             InitializeComponent();
@@ -25,6 +29,7 @@ namespace Smirnov_kursovaya.mainForm
             if (MessageBox.Show("Вы уверены, что хотите выйти?", "Подтверждение",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
+                _skipCloseConfirm = true;
                 Application.Exit();
             }
         }
@@ -34,9 +39,24 @@ namespace Smirnov_kursovaya.mainForm
             if (MessageBox.Show("Вы уверены, что хотите выйти из системы?", "Подтверждение",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
+                _skipCloseConfirm = true;
                 Authentication auth = new Authentication();
                 auth.Show();
                 this.Close();
+            }
+        }
+
+        // Подтверждение при закрытии программы крестиком или Alt+F4.
+        private void Manager_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            if (_skipCloseConfirm) return;
+            if (e.CloseReason == CloseReason.UserClosing || e.CloseReason == CloseReason.ApplicationExitCall)
+            {
+                if (MessageBox.Show("Вы уверены, что хотите выйти?", "Подтверждение",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                {
+                    e.Cancel = true;
+                }
             }
         }
 

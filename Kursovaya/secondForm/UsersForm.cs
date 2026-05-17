@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
 using Smirnov_kursovaya.Database;
+using Smirnov_kursovaya.mainForm;
 
 namespace Smirnov_kursovaya.secondForm
 {
@@ -257,6 +258,9 @@ namespace Smirnov_kursovaya.secondForm
         {
             if (isEditMode) { UpdateUser(); return; }
             if (!ValidateUserInput(true)) return;
+            if (MessageBox.Show($"Добавить пользователя '{loginTextBox.Text.Trim()}'?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
             try
             {
                 dynamic selectedRole = roleComboBox.SelectedItem;
@@ -303,9 +307,16 @@ namespace Smirnov_kursovaya.secondForm
             DataGridViewRow row = usersDataGridView.SelectedRows[0];
             currentUserId = Convert.ToInt32(row.Cells["id"].Value);
             string login = row.Cells["login"].Value.ToString();
+            // Системный admin и текущий залогиненный админ не могут редактировать сами себя.
             if (login == "admin")
             {
                 MessageBox.Show("Нельзя редактировать системного администратора", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            if (UserContext.CurrentUser != null && UserContext.CurrentUser.Id == currentUserId)
+            {
+                MessageBox.Show("Нельзя редактировать учётную запись, под которой вы вошли в систему",
+                    "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
             fioTextBox.Text = row.Cells["fio"].Value.ToString();
@@ -328,6 +339,9 @@ namespace Smirnov_kursovaya.secondForm
         private void UpdateUser()
         {
             if (!ValidateUserInput(false)) return;
+            if (MessageBox.Show($"Сохранить изменения для пользователя '{loginTextBox.Text.Trim()}'?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
             try
             {
                 dynamic selectedRole = roleComboBox.SelectedItem;
@@ -382,9 +396,16 @@ namespace Smirnov_kursovaya.secondForm
             }
             int userId = Convert.ToInt32(usersDataGridView.SelectedRows[0].Cells["id"].Value);
             string login = usersDataGridView.SelectedRows[0].Cells["login"].Value.ToString();
+            // Системный admin и текущий залогиненный админ не могут удалить сами себя.
             if (login == "admin")
             {
                 MessageBox.Show("Нельзя удалить системного администратора", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            if (UserContext.CurrentUser != null && UserContext.CurrentUser.Id == userId)
+            {
+                MessageBox.Show("Нельзя удалить учётную запись, под которой вы вошли в систему",
+                    "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
             if (MessageBox.Show($"Удалить пользователя {login}?", "Подтверждение", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)

@@ -524,6 +524,10 @@ namespace Smirnov_kursovaya.secondForm
                 MessageBox.Show("Корзина пуста", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
+            decimal finalAmountPreview = subtotal - discountAmount;
+            if (MessageBox.Show($"Оформить заказ на сумму {finalAmountPreview:C2}?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
 
             try
             {

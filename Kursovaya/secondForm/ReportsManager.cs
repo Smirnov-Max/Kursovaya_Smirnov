@@ -44,6 +44,9 @@ namespace Smirnov_kursovaya.secondForm
 
         private void InitializeDashboard()
         {
+            // Календари ограничены текущей датой: ни «от», ни «до» не позже сегодня.
+            reportFromDatePicker.MaxDate = DateTime.Today;
+            reportToDatePicker.MaxDate = DateTime.Today;
             reportFromDatePicker.Value = DateTime.Today.AddDays(-29);
             reportToDatePicker.Value = DateTime.Today;
 

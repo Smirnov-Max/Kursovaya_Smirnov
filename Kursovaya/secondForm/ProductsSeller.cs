@@ -732,6 +732,9 @@ namespace Smirnov_kursovaya.secondForm
                 return;
             }
             if (!ValidateProductInput()) return;
+            if (MessageBox.Show($"Добавить товар '{nameTextBox.Text.Trim()}'?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
 
             try
             {
@@ -857,6 +860,9 @@ namespace Smirnov_kursovaya.secondForm
         private void UpdateProduct(int productId)
         {
             if (!ValidateProductInput()) return;
+            if (MessageBox.Show($"Сохранить изменения для товара '{nameTextBox.Text.Trim()}'?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
             try
             {
                 dynamic selectedCategory = categoryComboBox.SelectedItem;

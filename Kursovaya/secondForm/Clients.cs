@@ -275,6 +275,9 @@ namespace Smirnov_kursovaya.secondForm
             if (!ValidateClientInput()) return;
 
             string phone = FormatPhone(GetCleanPhone(phoneTextBox.Text));
+            if (MessageBox.Show($"Добавить клиента '{fioTextBox.Text.Trim()}'?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
             try
             {
                 using (var conn = dbHelper.GetConnection())
@@ -349,6 +352,9 @@ namespace Smirnov_kursovaya.secondForm
         {
             if (!ValidateClientInput()) return;
             string phone = FormatPhone(GetCleanPhone(phoneTextBox.Text));
+            if (MessageBox.Show($"Сохранить изменения для клиента '{fioTextBox.Text.Trim()}'?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
             try
             {
                 using (var conn = dbHelper.GetConnection())

@@ -119,6 +119,7 @@
             this.Name = "Administrator";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "Системный администратор";
+            this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.Administrator_FormClosing);
             this.Load += new System.EventHandler(this.Administrator_Load);
             this.sidePanel.ResumeLayout(false);
             this.ResumeLayout(false);

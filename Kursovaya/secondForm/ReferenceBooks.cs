@@ -252,6 +252,9 @@ namespace Smirnov_kursovaya.secondForm
                 MessageBox.Show($"Введите название ({itemType})", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
+            if (MessageBox.Show($"Добавить {itemType} \"{name}\"?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
             try
             {
                 using (var conn = dbHelper.GetConnection())
@@ -303,6 +306,9 @@ namespace Smirnov_kursovaya.secondForm
                 MessageBox.Show("Введите новое название", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
+            if (MessageBox.Show($"Сохранить изменения для {itemType} \"{name}\"?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
             try
             {
                 using (var conn = dbHelper.GetConnection())
@@ -372,6 +378,15 @@ namespace Smirnov_kursovaya.secondForm
             {
                 MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        // Проверяем, что текущий пользователь — системный администратор. Бекап и восстановление БД
+        // должны быть доступны только ему.
+        private bool IsCurrentUserAdmin()
+        {
+            var current = mainForm.UserContext.CurrentUser;
+            if (current == null) return false;
+            return current.Role == "Системный администратор";
         }
 
         private bool IsSystemReference(string tableName, int id)
@@ -554,6 +569,12 @@ namespace Smirnov_kursovaya.secondForm
         // ===== Резервное копирование =====
         private void btnBackup_Click(object sender, EventArgs e)
         {
+            if (!IsCurrentUserAdmin())
+            {
+                MessageBox.Show("Резервное копирование доступно только системному администратору",
+                    "Ошибка доступа", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
             using (var sfd = new SaveFileDialog { Filter = "SQL files (*.sql)|*.sql", FileName = $"backup_{DateTime.Now:yyyyMMdd_HHmmss}.sql", Title = "Сохранить резервную копию" })
             {
                 if (sfd.ShowDialog() != DialogResult.OK) return;
@@ -573,6 +594,12 @@ namespace Smirnov_kursovaya.secondForm
         // ===== Восстановление БД =====
         private void btnRestore_Click(object sender, EventArgs e)
         {
+            if (!IsCurrentUserAdmin())
+            {
+                MessageBox.Show("Восстановление БД доступно только системному администратору",
+                    "Ошибка доступа", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
             using (var ofd = new OpenFileDialog { Filter = "SQL files (*.sql)|*.sql", Title = "Выберите файл резервной копии" })
             {
                 if (ofd.ShowDialog() != DialogResult.OK) return;
