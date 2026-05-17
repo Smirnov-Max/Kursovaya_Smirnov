@@ -405,9 +405,10 @@ namespace Smirnov_kursovaya.mainForm
                                         "Требуется подтверждение", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                                 }
 
-                                // Очищаем поля для новой попытки
+                                // Очищаем оба поля (логин и пароль) для новой попытки
+                                usernameTextBox.Clear();
                                 passwordTextBox.Clear();
-                                passwordTextBox.Focus();
+                                usernameTextBox.Focus();
                             }
                         }
                     }

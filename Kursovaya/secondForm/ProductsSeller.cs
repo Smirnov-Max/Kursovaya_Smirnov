@@ -1,8 +1,7 @@
-﻿// ProductsForm.cs
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.Data;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
@@ -28,205 +27,165 @@ namespace Smirnov_kursovaya.secondForm
 
         // Хранит временный путь к изображению до сохранения
         private string tempImagePath = null;
-        // Хранит текущий путь к изображению в БД (для режима редактирования)
-        private string currentImagePathInDb = null;
 
-        // Путь к папке с изображениями в AppData
+        // Путь к папке с пользовательскими изображениями (AppData)
         private readonly string imagesFolderPath;
+        // Путь к папке Resources со стандартными изображениями товаров
+        private readonly string imagesResourceFolder;
+
+        // Для временного перемещения товара наверх после добавления/редактирования
+        private bool moveToTop = false;
+        private int? highlightProductId = null;
+
+        // Лимиты на размер изображения
+        private const long IMAGE_TARGET_BYTES = 2L * 1024 * 1024;       // 2 МБ — целевой размер при сжатии
+        private const long IMAGE_HARD_LIMIT_BYTES = (long)(2.5 * 1024 * 1024); // 2.5 МБ — жёсткий лимит, если сжатие не удалось
 
         public ProductsForm()
         {
             InitializeComponent();
             dbHelper = new DatabaseHelper();
 
-            // Инициализация пути к папке с изображениями
             string appDataPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Smirnov_kursovaya"
             );
             imagesFolderPath = Path.Combine(appDataPath, "ProductImages");
-
-            // Создаем папку, если её нет
             if (!Directory.Exists(imagesFolderPath))
-            {
                 Directory.CreateDirectory(imagesFolderPath);
+
+            // Путь к папке Resources (изображения по умолчанию)
+            imagesResourceFolder = Path.Combine(Application.StartupPath, "Resources");
+            // Если папка не найдена, пробуем относительный путь (для разработки)
+            if (!Directory.Exists(imagesResourceFolder))
+            {
+                string devPath = Path.GetFullPath(Path.Combine(Application.StartupPath, @"..\..\Resources"));
+                if (Directory.Exists(devPath))
+                    imagesResourceFolder = devPath;
             }
 
             InitializeControls();
             LoadCategories();
-            LoadProductsPage(1); // Загружаем первую страницу
-
-            // Подписываемся на событие изменения размера формы
-            this.Resize += (s, e) => {
-                if (readOnlyMode)
-                {
-                    OnResize(e);
-                }
-            };
+            LoadProductsPage(1);
+            this.Resize += ProductsForm_Resize;
         }
 
-        private void ProductsForm_Load(object sender, EventArgs e)
-        {
-            // Инициализация при загрузке формы
-        }
+        private void ProductsForm_Load(object sender, EventArgs e) { }
 
-        public void SetReadOnlyMode()
-        {
-            readOnlyMode = true;
-
-            // Скрываем все кнопки управления
-            addButton.Visible = false;
-            editButton.Visible = false;
-            deleteButton.Visible = false;
-            addImageButton.Visible = false;
-            removeImageButton.Visible = false;
-
-            // Скрываем всю панель groupBox1 (панель с полями ввода)
-            if (groupBox1 != null)
-            {
-                groupBox1.Visible = false;
-            }
-
-            // Скрываем PictureBox с изображением
-            if (productPictureBox != null)
-            {
-                productPictureBox.Visible = false;
-            }
-
-            // Обновляем видимость колонок в DataGridView
-            UpdateDataGridViewColumnsVisibility();
-
-            // Перемещаем и растягиваем DataGridView
-            if (productsDataGridView != null)
-            {
-                productsDataGridView.Top = categoryFilterComboBox.Bottom + 30;
-                productsDataGridView.Left = 10;
-                productsDataGridView.Width = this.ClientSize.Width - 20;
-                productsDataGridView.Height = this.ClientSize.Height - productsDataGridView.Top - 10;
-                productsDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            }
-
-            // Блокируем поля ввода
-            nameTextBox.ReadOnly = true;
-            articleTextBox.ReadOnly = true;
-            priceTextBox.ReadOnly = true;
-            descriptionTextBox.ReadOnly = true;
-            categoryComboBox.Enabled = false;
-
-            // Делаем поля серыми/неактивными
-            nameTextBox.BackColor = Color.FromArgb(240, 240, 240);
-            articleTextBox.BackColor = Color.FromArgb(240, 240, 240);
-            priceTextBox.BackColor = Color.FromArgb(240, 240, 240);
-            descriptionTextBox.BackColor = Color.FromArgb(240, 240, 240);
-            categoryComboBox.BackColor = Color.FromArgb(240, 240, 240);
-
-            // Убираем плейсхолдеры
-            if (nameTextBox.Text == "Название товара")
-                nameTextBox.Text = "";
-            if (articleTextBox.Text == "Артикул (только цифры)")
-                articleTextBox.Text = "";
-            if (priceTextBox.Text == "Цена (например: 1000.50)")
-                priceTextBox.Text = "";
-
-            // Меняем заголовок формы
-            this.Text = "Просмотр товаров (режим продавца)";
-            label1.Text = "Просмотр товаров";
-        }
-
+        // ==================== Инициализация ====================
         private void InitializeControls()
         {
             SetPlaceholderText(searchTextBox, "Поиск по названию...");
             SetPlaceholderText(nameTextBox, "Название товара");
-            SetPlaceholderText(articleTextBox, "Артикул (только цифры)");
-            SetPlaceholderText(priceTextBox, "Цена (например: 1000.50)");
 
-            // Настройка DataGridView (стилизация и русские заголовки)
+            articleTextBox.ReadOnly = true;
+            articleTextBox.BackColor = Color.FromArgb(240, 240, 240);
+            articleTextBox.TabStop = false;
+            articleTextBox.Text = "Авто";
+            articleTextBox.ForeColor = Color.Gray;
+
+            priceTextBox.MaxLength = 3;
+            priceTextBox.Text = "";
+            SetPlaceholderText(priceTextBox, "Цена (до 999)");
+
+            nameTextBox.MaxLength = 100;
+            descriptionTextBox.MaxLength = 500;
+
             SetupDataGridView();
 
             productPictureBox.BorderStyle = BorderStyle.FixedSingle;
             productPictureBox.SizeMode = PictureBoxSizeMode.Zoom;
 
             ApplyCoralButtonStyle();
+            SetupResponsiveLayout();
 
-            foreach (Control control in this.Controls)
-            {
-                if (control is DataGridView dgv)
-                {
-                    dgv.DataBindingComplete += (s, e) => {
-                        if (dgv.Columns.Contains("id"))
-                        {
-                            dgv.Columns["id"].Visible = false;
-                        }
-                    };
-                }
-            }
+            if (productsDataGridView.Columns.Contains("image"))
+                productsDataGridView.Columns["image"].Visible = false;
         }
 
-        private void ApplyCoralButtonStyle()
+        // Обработчики для соответствия дизайнеру
+        private void nameTextBox_KeyPress(object sender, KeyPressEventArgs e) { }
+        private void articleTextBox_KeyPress(object sender, KeyPressEventArgs e) { }
+        private void priceTextBox_KeyPress(object sender, KeyPressEventArgs e)
         {
-            Color coralColor = Color.FromArgb(255, 127, 80);
-            Color coralLightColor = Color.FromArgb(255, 147, 100);
-            Color coralDarkColor = Color.FromArgb(235, 107, 60);
-
-            foreach (Control control in this.Controls)
+            // Разрешаем цифры, управляющие символы и один разделитель (запятую или точку)
+            if (char.IsControl(e.KeyChar)) return;
+            if (char.IsDigit(e.KeyChar)) return;
+            if (e.KeyChar == ',' || e.KeyChar == '.')
             {
-                if (control is Button button)
-                {
-                    ApplyButtonStyle(button, coralColor, coralLightColor, coralDarkColor);
-                }
-                else if (control is GroupBox groupBox)
-                {
-                    foreach (Control subControl in groupBox.Controls)
-                    {
-                        if (subControl is Button subButton)
-                        {
-                            ApplyButtonStyle(subButton, coralColor, coralLightColor, coralDarkColor);
-                        }
-                    }
-                }
-                else if (control is Panel panel) // для панели пагинации
-                {
-                    foreach (Control subControl in panel.Controls)
-                    {
-                        if (subControl is Button subButton)
-                        {
-                            ApplyButtonStyle(subButton, coralColor, coralLightColor, coralDarkColor);
-                        }
-                    }
-                }
+                if (priceTextBox.Text.Contains(",") || priceTextBox.Text.Contains(".")) e.Handled = true;
+                return;
             }
-
-            // Особый стиль для кнопки меню
-            if (menuButton != null)
-            {
-                menuButton.BackColor = Color.Red;
-                menuButton.FlatStyle = FlatStyle.Flat;
-                menuButton.FlatAppearance.BorderColor = Color.DarkRed;
-                menuButton.FlatAppearance.BorderSize = 1;
-                menuButton.ForeColor = Color.Black;
-                menuButton.Font = new Font(menuButton.Font, FontStyle.Regular);
-
-                menuButton.MouseEnter += (s, e) => { menuButton.BackColor = Color.IndianRed; };
-                menuButton.MouseLeave += (s, e) => { menuButton.BackColor = Color.Red; };
-                menuButton.MouseDown += (s, e) => { menuButton.BackColor = Color.OrangeRed; };
-                menuButton.MouseUp += (s, e) => { menuButton.BackColor = Color.OrangeRed; };
-            }
+            e.Handled = true;
         }
 
-        private void ApplyButtonStyle(Button button, Color normalColor, Color hoverColor, Color pressedColor)
+        public void SetReadOnlyMode()
         {
-            button.BackColor = normalColor;
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderColor = Color.FromArgb(235, 107, 60);
-            button.FlatAppearance.BorderSize = 1;
-            button.ForeColor = Color.Black;
-            button.Font = new Font(button.Font, FontStyle.Regular);
+            readOnlyMode = true;
 
-            button.MouseEnter += (s, e) => { button.BackColor = hoverColor; };
-            button.MouseLeave += (s, e) => { button.BackColor = normalColor; };
-            button.MouseDown += (s, e) => { button.BackColor = pressedColor; };
-            button.MouseUp += (s, e) => { button.BackColor = hoverColor; };
+            addButton.Visible = false;
+            editButton.Visible = false;
+            deleteButton.Visible = false;
+            addImageButton.Visible = false;
+            removeImageButton.Visible = false;
+
+            if (groupBox1 != null) groupBox1.Visible = false;
+            if (productPictureBox != null) productPictureBox.Visible = false;
+
+            nameTextBox.ReadOnly = true;
+            articleTextBox.ReadOnly = true;
+            priceTextBox.ReadOnly = true;
+            descriptionTextBox.ReadOnly = true;
+            categoryComboBox.Enabled = false;
+
+            nameTextBox.BackColor = Color.FromArgb(240, 240, 240);
+            articleTextBox.BackColor = Color.FromArgb(240, 240, 240);
+            priceTextBox.BackColor = Color.FromArgb(240, 240, 240);
+            descriptionTextBox.BackColor = Color.FromArgb(240, 240, 240);
+            categoryComboBox.BackColor = Color.FromArgb(240, 240, 240);
+
+            ClearPlaceholderText(nameTextBox, "Название товара");
+            ClearPlaceholderText(priceTextBox, "Цена (до 999)");
+
+            this.Text = "Просмотр товаров (режим продавца)";
+            label1.Text = "Просмотр товаров";
+
+            if (productsDataGridView.Columns.Contains("image"))
+                productsDataGridView.Columns["image"].Visible = true;
+
+            AdjustLayoutForResize();
         }
+
+        private void ClearPlaceholderText(TextBox textBox, string placeholder)
+        {
+            if (textBox.Text == placeholder)
+            {
+                textBox.Text = "";
+                textBox.ForeColor = Color.Black;
+            }
+        }
+
+        private void AdjustLayoutForResize()
+        {
+            if (readOnlyMode)
+            {
+                if (productsDataGridView != null)
+                {
+                    productsDataGridView.Top = categoryFilterComboBox.Bottom + 20;
+                    productsDataGridView.Left = 10;
+                    productsDataGridView.Width = this.ClientSize.Width - 20;
+                    productsDataGridView.Height = this.ClientSize.Height - productsDataGridView.Top - 60;
+                    productsDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+                }
+            }
+            else
+            {
+                if (productsDataGridView != null)
+                    productsDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            }
+        }
+
+        private void ProductsForm_Resize(object sender, EventArgs e) => AdjustLayoutForResize();
 
         private void SetupDataGridView()
         {
@@ -235,7 +194,7 @@ namespace Smirnov_kursovaya.secondForm
             DataGridViewImageColumn imageCol = new DataGridViewImageColumn();
             imageCol.Name = "image";
             imageCol.HeaderText = "Изображение";
-            imageCol.DataPropertyName = "image";
+            imageCol.DataPropertyName = "image"; // будет переопределено в CellFormatting
             imageCol.ImageLayout = DataGridViewImageCellLayout.Zoom;
             imageCol.Width = 120;
             productsDataGridView.Columns.Add(imageCol);
@@ -251,106 +210,109 @@ namespace Smirnov_kursovaya.secondForm
             if (productsDataGridView.Columns.Contains("category_id"))
                 productsDataGridView.Columns["category_id"].Visible = false;
 
-            productsDataGridView.Columns["price"].DefaultCellStyle.Format = "C2";
+            // Формат цены: "14,00 руб." (русская локаль, две цифры после запятой)
+            productsDataGridView.Columns["price"].DefaultCellStyle.Format = "0.00\" руб.\"";
 
-            // Устанавливаем чередование цветов строк
+            if (productsDataGridView.Columns.Contains("name"))
+                productsDataGridView.Columns["name"].DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+            if (productsDataGridView.Columns.Contains("description"))
+                productsDataGridView.Columns["description"].DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+
+            // Ширина колонок: описание шире, цена/артикул уже
+            productsDataGridView.Columns["article"].FillWeight = 60;
+            productsDataGridView.Columns["name"].FillWeight = 110;
+            productsDataGridView.Columns["category_name"].FillWeight = 90;
+            productsDataGridView.Columns["price"].FillWeight = 70;
+            productsDataGridView.Columns["description"].FillWeight = 240;
+
+            productsDataGridView.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
+            productsDataGridView.RowTemplate.MinimumHeight = 40;
+
             productsDataGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 240, 255);
-
-            // Цвет выделенной строки
             productsDataGridView.DefaultCellStyle.SelectionBackColor = Color.FromArgb(230, 210, 250);
             productsDataGridView.DefaultCellStyle.SelectionForeColor = Color.Black;
-
-            // Цвет заголовков
+            productsDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10);
             productsDataGridView.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(255, 127, 80);
             productsDataGridView.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
             productsDataGridView.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
             productsDataGridView.ColumnHeadersHeight = 40;
             productsDataGridView.EnableHeadersVisualStyles = false;
 
-            // Режим заполнения
             productsDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-
-            // Настройка выделения
             productsDataGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             productsDataGridView.ReadOnly = true;
             productsDataGridView.RowHeadersVisible = false;
             productsDataGridView.AllowUserToAddRows = false;
             productsDataGridView.AllowUserToDeleteRows = false;
             productsDataGridView.MultiSelect = false;
-
-            // Настройка сетки
             productsDataGridView.GridColor = Color.LightGray;
             productsDataGridView.CellBorderStyle = DataGridViewCellBorderStyle.Single;
             productsDataGridView.RowTemplate.Height = 130;
 
-            // Обработчик для преобразования байтов в изображение
+            // Подмена изображения в ячейке
             productsDataGridView.CellFormatting += (s, e) =>
             {
-                if (productsDataGridView.Columns[e.ColumnIndex].Name == "image")
+                if (productsDataGridView.Columns[e.ColumnIndex].Name == "image" && e.RowIndex >= 0)
                 {
-                    if (e.Value is byte[] bytes && bytes.Length > 0)
+                    string article = productsDataGridView.Rows[e.RowIndex].Cells["article"].Value?.ToString();
+                    if (!string.IsNullOrEmpty(article))
                     {
-                        try
-                        {
-                            using (MemoryStream ms = new MemoryStream(bytes))
-                            {
-                                e.Value = Image.FromStream(ms);
-                            }
-                        }
-                        catch
-                        {
-                            e.Value = ImageHelper.Placeholder.Clone();
-                        }
+                        e.Value = GetProductImage(article);
                     }
                     else
                     {
                         e.Value = ImageHelper.Placeholder.Clone();
                     }
+                    e.FormattingApplied = true;
                 }
             };
         }
-    
 
-        private void UpdateDataGridViewColumnsVisibility()
+        // ==================== Получение изображения товара ====================
+        private Image GetProductImage(string article)
         {
-            // Можно оставить пустым или настроить видимость колонок в зависимости от режима
-        }
-
-        private void SetPlaceholderText(TextBox textBox, string placeholder)
-        {
-            if (string.IsNullOrEmpty(textBox.Text))
+            string[] extensions = { ".jpg", ".jpeg", ".png", ".bmp", ".gif" };
+            // 1. Пользовательские изображения (AppData)
+            foreach (var ext in extensions)
             {
-                textBox.Text = placeholder;
-                textBox.ForeColor = Color.Gray;
+                string filePath = Path.Combine(imagesFolderPath, article + ext);
+                if (File.Exists(filePath))
+                {
+                    try
+                    {
+                        return Image.FromFile(filePath);
+                    }
+                    catch { }
+                }
             }
-
-            textBox.Enter += (s, e) => {
-                if (textBox.Text == placeholder)
+            // 2. Стандартные изображения из Resources
+            foreach (var ext in extensions)
+            {
+                string filePath = Path.Combine(imagesResourceFolder, article + ext);
+                if (File.Exists(filePath))
                 {
-                    textBox.Text = "";
-                    textBox.ForeColor = Color.Black;
+                    try
+                    {
+                        return Image.FromFile(filePath);
+                    }
+                    catch { }
                 }
-            };
-
-            textBox.Leave += (s, e) => {
-                if (string.IsNullOrWhiteSpace(textBox.Text))
-                {
-                    textBox.Text = placeholder;
-                    textBox.ForeColor = Color.Gray;
-                }
-            };
+            }
+            // 3. Заглушка
+            return ImageHelper.Placeholder.Clone() as Image;
         }
 
+        // ==================== Загрузка данных ====================
         private void LoadCategories()
         {
             try
             {
-                using (var connection = dbHelper.GetConnection())
+                using (var conn = dbHelper.GetConnection())
                 {
-                    connection.Open();
+                    conn.Open();
                     string query = "SELECT id, name FROM categories ORDER BY name";
-                    using (var command = new MySqlCommand(query, connection))
-                    using (var reader = command.ExecuteReader())
+                    using (var cmd = new MySqlCommand(query, conn))
+                    using (var reader = cmd.ExecuteReader())
                     {
                         categoryComboBox.Items.Clear();
                         categoryFilterComboBox.Items.Clear();
@@ -358,11 +320,7 @@ namespace Smirnov_kursovaya.secondForm
 
                         while (reader.Read())
                         {
-                            var item = new
-                            {
-                                Id = reader["id"],
-                                Name = reader["name"].ToString()
-                            };
+                            var item = new { Id = reader["id"], Name = reader["name"].ToString() };
                             categoryComboBox.Items.Add(item);
                             categoryFilterComboBox.Items.Add(item);
                         }
@@ -376,36 +334,51 @@ namespace Smirnov_kursovaya.secondForm
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка загрузки категорий: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Ошибка загрузки категорий: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        // ========== МЕТОДЫ ПАГИНАЦИИ ==========
-
+        // ==================== Загрузка товаров с собственной пагинацией =====
+        // Поиск по названию — совпадение с начала поля.
         private void LoadProductsPage(int page)
         {
             try
             {
-                DataTable dt = dbHelper.GetProductsWithPagination(page, pageSize, currentSearchText, currentCategory, out totalRecords);
+                DataTable dt = LoadProductsFromDb(page, pageSize, currentSearchText, currentCategory, out totalRecords);
                 totalPages = (int)Math.Ceiling((double)totalRecords / pageSize);
                 if (totalPages == 0) totalPages = 1;
                 if (page < 1) page = 1;
                 if (page > totalPages) page = totalPages;
                 currentPage = page;
 
-                // Если в таблице нет колонки image, добавлять не нужно, но метод GetProductsWithPagination должен её возвращать
+                // Временное перемещение выделенного товара наверх
+                if (moveToTop && highlightProductId.HasValue)
+                {
+                    bool found = MoveRowToTop(dt, highlightProductId.Value);
+                    if (!found)
+                    {
+                        DataRow productRow = GetProductRowById(highlightProductId.Value);
+                        if (productRow != null)
+                        {
+                            DataRow newRow = dt.NewRow();
+                            newRow.ItemArray = productRow.ItemArray;
+                            dt.Rows.InsertAt(newRow, 0);
+                            if (dt.Rows.Count > pageSize)
+                                dt.Rows.RemoveAt(dt.Rows.Count - 1);
+                        }
+                    }
+                    moveToTop = false;
+                    highlightProductId = null;
+                }
+
                 productsDataGridView.DataSource = dt;
 
-                // Скрываем служебные колонки
                 if (productsDataGridView.Columns.Contains("id"))
                     productsDataGridView.Columns["id"].Visible = false;
                 if (productsDataGridView.Columns.Contains("category_id"))
                     productsDataGridView.Columns["category_id"].Visible = false;
-
-                // Форматируем цену
-                if (productsDataGridView.Columns.Contains("price"))
-                    productsDataGridView.Columns["price"].DefaultCellStyle.Format = "C2";
+                if (productsDataGridView.Columns.Contains("image"))
+                    productsDataGridView.Columns["image"].Visible = readOnlyMode;
 
                 UpdatePaginationInfo();
             }
@@ -415,30 +388,113 @@ namespace Smirnov_kursovaya.secondForm
             }
         }
 
+        // Загрузка с поиском по началу названия (LIKE 'text%') и фильтром категории
+        private DataTable LoadProductsFromDb(int page, int size, string search, string category, out int total)
+        {
+            using (var conn = dbHelper.GetConnection())
+            {
+                conn.Open();
+
+                string whereSearch = string.IsNullOrEmpty(search) ? "" : " AND p.name LIKE @search";
+                string whereCategory = string.IsNullOrEmpty(category) ? "" : " AND c.name = @category";
+
+                string countQuery = $@"SELECT COUNT(*) FROM products p
+                                       LEFT JOIN categories c ON p.category_id = c.id
+                                       WHERE 1=1 {whereSearch} {whereCategory}";
+                using (var cntCmd = new MySqlCommand(countQuery, conn))
+                {
+                    if (!string.IsNullOrEmpty(search)) cntCmd.Parameters.AddWithValue("@search", search + "%");
+                    if (!string.IsNullOrEmpty(category)) cntCmd.Parameters.AddWithValue("@category", category);
+                    total = Convert.ToInt32(cntCmd.ExecuteScalar());
+                }
+
+                int offset = (page - 1) * size;
+                string query = $@"SELECT p.id, p.article, p.name, c.name AS category_name, p.price, p.description
+                                  FROM products p
+                                  LEFT JOIN categories c ON p.category_id = c.id
+                                  WHERE 1=1 {whereSearch} {whereCategory}
+                                  ORDER BY p.id DESC
+                                  LIMIT @size OFFSET @offset";
+                using (var cmd = new MySqlCommand(query, conn))
+                {
+                    if (!string.IsNullOrEmpty(search)) cmd.Parameters.AddWithValue("@search", search + "%");
+                    if (!string.IsNullOrEmpty(category)) cmd.Parameters.AddWithValue("@category", category);
+                    cmd.Parameters.AddWithValue("@size", size);
+                    cmd.Parameters.AddWithValue("@offset", offset);
+                    using (var adapter = new MySqlDataAdapter(cmd))
+                    {
+                        DataTable dt = new DataTable();
+                        adapter.Fill(dt);
+                        return dt;
+                    }
+                }
+            }
+        }
+
+        private bool MoveRowToTop(DataTable table, int productId)
+        {
+            if (table == null || table.Rows.Count == 0) return false;
+            DataRow targetRow = null;
+            foreach (DataRow row in table.Rows)
+            {
+                if (Convert.ToInt32(row["id"]) == productId)
+                {
+                    targetRow = row;
+                    break;
+                }
+            }
+            if (targetRow != null)
+            {
+                DataRow newRow = table.NewRow();
+                newRow.ItemArray = targetRow.ItemArray;
+                table.Rows.Remove(targetRow);
+                table.Rows.InsertAt(newRow, 0);
+                return true;
+            }
+            return false;
+        }
+
+        private DataRow GetProductRowById(int productId)
+        {
+            using (var conn = dbHelper.GetConnection())
+            {
+                conn.Open();
+                string query = @"SELECT p.id, p.article, p.name, c.name AS category_name, p.price, p.description
+                                 FROM products p
+                                 LEFT JOIN categories c ON p.category_id = c.id
+                                 WHERE p.id = @id";
+                using (var cmd = new MySqlCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@id", productId);
+                    using (var adapter = new MySqlDataAdapter(cmd))
+                    {
+                        DataTable dt = new DataTable();
+                        adapter.Fill(dt);
+                        return dt.Rows.Count > 0 ? dt.Rows[0] : null;
+                    }
+                }
+            }
+        }
+
         private void UpdatePaginationInfo()
         {
             if (lblPageInfo != null)
                 lblPageInfo.Text = $"Страница {currentPage} из {totalPages}";
-
             if (txtPageNumber != null)
                 txtPageNumber.Text = currentPage.ToString();
-
             if (lblRecordInfo != null)
             {
                 int startRecord = (currentPage - 1) * pageSize + 1;
                 int endRecord = Math.Min(currentPage * pageSize, totalRecords);
-                if (totalRecords > 0)
-                    lblRecordInfo.Text = $"Записей: {startRecord}-{endRecord} из {totalRecords}";
-                else
-                    lblRecordInfo.Text = "Записей: 0 из 0";
+                lblRecordInfo.Text = totalRecords > 0 ? $"Записей: {startRecord}-{endRecord} из {totalRecords}" : "Записей: 0 из 0";
             }
-
             if (btnFirstPage != null) btnFirstPage.Enabled = currentPage > 1;
             if (btnPrevPage != null) btnPrevPage.Enabled = currentPage > 1;
             if (btnNextPage != null) btnNextPage.Enabled = currentPage < totalPages;
             if (btnLastPage != null) btnLastPage.Enabled = currentPage < totalPages;
         }
 
+        // Обработчики кнопок пагинации
         private void BtnFirstPage_Click(object sender, EventArgs e) => LoadProductsPage(1);
         private void BtnPrevPage_Click(object sender, EventArgs e) { if (currentPage > 1) LoadProductsPage(currentPage - 1); }
         private void BtnNextPage_Click(object sender, EventArgs e) { if (currentPage < totalPages) LoadProductsPage(currentPage + 1); }
@@ -449,13 +505,10 @@ namespace Smirnov_kursovaya.secondForm
             if (txtPageNumber != null && int.TryParse(txtPageNumber.Text, out int page))
             {
                 if (page >= 1 && page <= totalPages)
-                {
                     LoadProductsPage(page);
-                }
                 else
                 {
-                    MessageBox.Show($"Введите номер страницы от 1 до {totalPages}", "Ошибка",
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show($"Введите номер страницы от 1 до {totalPages}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     txtPageNumber.Text = currentPage.ToString();
                 }
             }
@@ -464,10 +517,7 @@ namespace Smirnov_kursovaya.secondForm
         private void TxtPageNumber_KeyPress(object sender, KeyPressEventArgs e)
         {
             if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar))
-            {
                 e.Handled = true;
-            }
-
             if (e.KeyChar == (char)Keys.Enter)
             {
                 BtnGoToPage_Click(sender, e);
@@ -475,30 +525,20 @@ namespace Smirnov_kursovaya.secondForm
             }
         }
 
-        // ========== ОБРАБОТЧИКИ ПОИСКА И ФИЛЬТРАЦИИ ==========
-
+        // ==================== Поиск и фильтрация ====================
+        // Поиск по названию — совпадение с начала поля.
         private void searchTextBox_TextChanged(object sender, EventArgs e)
         {
-            if (searchTextBox.Text == "Поиск по названию...")
-                currentSearchText = "";
-            else
-                currentSearchText = searchTextBox.Text;
-
+            currentSearchText = searchTextBox.Text == "Поиск по названию..." ? "" : searchTextBox.Text;
             LoadProductsPage(1);
         }
 
         private void categoryFilterComboBox_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (categoryFilterComboBox.SelectedIndex > 0)
-            {
-                dynamic selectedCategory = categoryFilterComboBox.SelectedItem;
-                currentCategory = selectedCategory.Name;
-            }
+                currentCategory = (categoryFilterComboBox.SelectedItem as dynamic).Name;
             else
-            {
                 currentCategory = "";
-            }
-
             LoadProductsPage(1);
         }
 
@@ -519,575 +559,456 @@ namespace Smirnov_kursovaya.secondForm
             categoryFilterComboBox.SelectedIndex = 0;
             currentSearchText = "";
             currentCategory = "";
-
             LoadProductsPage(1);
-
             ClearForm();
             ResetFormMode();
         }
 
-        private void menuButton_Click(object sender, EventArgs e)
-        {
-            this.Close();
-        }
+        private void menuButton_Click(object sender, EventArgs e) => this.Close();
 
-        // ========== МЕТОДЫ ДЛЯ РАБОТЫ С ТОВАРАМИ (ДОБАВЛЕНИЕ/РЕДАКТИРОВАНИЕ) ==========
-
+        // ==================== Валидация ====================
         private bool ValidateProductInput()
         {
             if (string.IsNullOrEmpty(nameTextBox.Text) || nameTextBox.Text == "Название товара")
             {
-                MessageBox.Show("Введите название товара", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Введите название товара", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
-
-            if (string.IsNullOrEmpty(articleTextBox.Text) || articleTextBox.Text == "Артикул (только цифры)")
+            if (nameTextBox.Text.Length > 100)
             {
-                MessageBox.Show("Введите артикул товара", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Название не может быть длиннее 100 символов", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
-
             if (categoryComboBox.SelectedItem == null)
             {
-                MessageBox.Show("Выберите категорию товара", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Выберите категорию товара", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
-
-            if (string.IsNullOrEmpty(priceTextBox.Text) || priceTextBox.Text == "Цена (например: 1000.50)")
+            if (string.IsNullOrEmpty(priceTextBox.Text) || priceTextBox.Text == "Цена (до 999)")
             {
-                MessageBox.Show("Введите цену товара", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Введите цену товара", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
-
-            if (!long.TryParse(articleTextBox.Text, out long article))
+            if (!TryParsePrice(priceTextBox.Text, out decimal price) || price <= 0 || price > 999)
             {
-                MessageBox.Show("Артикул должен содержать только цифры", "Ошибка",
+                MessageBox.Show("Цена должна быть числом от 1 до 999 (например 14 или 14,00)", "Ошибка",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
-
-            if (!decimal.TryParse(priceTextBox.Text, out decimal price) || price <= 0)
-            {
-                MessageBox.Show("Цена должна быть положительным числом", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return false;
-            }
-
             return true;
+        }
+
+        // Парсинг цены с поддержкой и точки и запятой как разделителя.
+        private static bool TryParsePrice(string text, out decimal value)
+        {
+            value = 0m;
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            string normalized = text.Trim().Replace(',', '.');
+            return decimal.TryParse(normalized,
+                System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture, out value);
+        }
+
+        // Готовит цену для записи в БД. Возвращает decimal — БД сама приведет к нужному типу столбца.
+        private static decimal ParsePriceForDb(string text)
+        {
+            return TryParsePrice(text, out decimal value) ? value : 0m;
+        }
+
+        // ==================== Работа с изображениями ====================
+        private string SaveImageToTemp(Image image)
+        {
+            if (image == null || image == ImageHelper.Placeholder) return null;
+            string tempPath = Path.Combine(Path.GetTempPath(), $"temp_{Guid.NewGuid():N}.jpg");
+            image.Save(tempPath, ImageFormat.Jpeg);
+            return tempPath;
         }
 
         private string SaveImageFromTemp(string tempPath, string article)
         {
-            if (string.IsNullOrEmpty(tempPath) || !File.Exists(tempPath))
-                return null;
-
+            if (string.IsNullOrEmpty(tempPath) || !File.Exists(tempPath)) return null;
             try
             {
-                string fileName = $"product_{article}_{DateTime.Now:yyyyMMdd_HHmmss}.png";
+                string fileName = $"{article}.jpg"; // Сохраняем просто по артикулу, перезаписывая
                 string newPath = Path.Combine(imagesFolderPath, fileName);
                 File.Copy(tempPath, newPath, true);
                 return newPath;
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка сохранения изображения: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Ошибка сохранения изображения: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return null;
             }
         }
 
-        private string SaveImageToTemp(Image image)
+        // Сжатие изображения до целевого размера в байтах. Возвращает путь к временному
+        // jpg-файлу, размер которого <= maxBytes, либо null если уложиться не удалось.
+        private string CompressImageToMaxSize(Image sourceImage, long maxBytes)
         {
-            if (image == null || image == ImageHelper.Placeholder)
-                return null;
+            if (sourceImage == null) return null;
+            string tempFile = Path.Combine(Path.GetTempPath(), $"compressed_{Guid.NewGuid():N}.jpg");
+            ImageCodecInfo jpegCodec = GetEncoderInfo("image/jpeg");
+            EncoderParameters encoderParams = new EncoderParameters(1);
 
-            string tempPath = null;
+            for (long quality = 95; quality >= 10; quality -= 5)
+            {
+                encoderParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, quality);
+                using (FileStream fs = new FileStream(tempFile, FileMode.Create, FileAccess.Write))
+                {
+                    sourceImage.Save(fs, jpegCodec, encoderParams);
+                }
+                FileInfo fi = new FileInfo(tempFile);
+                if (fi.Length <= maxBytes)
+                    return tempFile;
+                File.Delete(tempFile);
+            }
+            return null;
+        }
+
+        // Сохраняет исходное изображение в jpg без сжатия (для случая, когда сжатие
+        // до 2 МБ не удалось, но размер исходника <= 2.5 МБ — оставляем как есть).
+        private string SaveImageAsIs(Image sourceImage)
+        {
+            if (sourceImage == null) return null;
+            string tempFile = Path.Combine(Path.GetTempPath(), $"asis_{Guid.NewGuid():N}.jpg");
+            sourceImage.Save(tempFile, ImageFormat.Jpeg);
+            return tempFile;
+        }
+
+        private ImageCodecInfo GetEncoderInfo(string mimeType)
+        {
+            ImageCodecInfo[] codecs = ImageCodecInfo.GetImageEncoders();
+            foreach (var codec in codecs)
+                if (codec.MimeType == mimeType) return codec;
+            return null;
+        }
+
+        private void DeleteImageFile(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+            try { File.Delete(path); } catch { }
+        }
+
+        private void LoadImageToPictureBox(string path)
+        {
+            if (productPictureBox.Image != null)
+            {
+                productPictureBox.Image.Dispose();
+                productPictureBox.Image = null;
+            }
             try
             {
-                string tempFileName = $"temp_{Guid.NewGuid():N}.png";
-                tempPath = Path.Combine(Path.GetTempPath(), tempFileName);
-
-                using (Bitmap bitmap = new Bitmap(image))
-                {
-                    bitmap.Save(tempPath, System.Drawing.Imaging.ImageFormat.Png);
-                }
-
-                return tempPath;
+                productPictureBox.Image = !string.IsNullOrEmpty(path) && File.Exists(path)
+                    ? Image.FromFile(path) : ImageHelper.Placeholder?.Clone() as Image;
             }
-            catch (Exception ex)
+            catch
             {
-                MessageBox.Show($"Ошибка сохранения временного изображения: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-
-                if (!string.IsNullOrEmpty(tempPath) && File.Exists(tempPath))
-                {
-                    try { File.Delete(tempPath); } catch { }
-                }
-                return null;
+                productPictureBox.Image = ImageHelper.Placeholder?.Clone() as Image;
             }
         }
 
-        private void DeleteImageFile(string imagePath, int maxAttempts = 3)
+        // ==================== Генерация артикула ====================
+        private string GetNextArticle()
         {
-            if (string.IsNullOrEmpty(imagePath) || !File.Exists(imagePath))
-                return;
-
-            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            using (var conn = dbHelper.GetConnection())
             {
-                try
+                conn.Open();
+                string query = "SELECT COALESCE(MAX(CAST(article AS UNSIGNED)), 0) + 1 FROM products";
+                using (var cmd = new MySqlCommand(query, conn))
                 {
-                    File.Delete(imagePath);
-                    break;
-                }
-                catch (IOException)
-                {
-                    if (attempt == maxAttempts)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Не удалось удалить файл {imagePath} после {maxAttempts} попыток");
-                    }
-                    else
-                    {
-                        System.Threading.Thread.Sleep(100);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Ошибка удаления файла: {ex.Message}");
-                    break;
+                    long nextNum = Convert.ToInt64(cmd.ExecuteScalar());
+                    return "0000" + nextNum.ToString();
                 }
             }
         }
 
-        private void LoadImageToPictureBox(string imagePath)
-        {
-            try
-            {
-                if (productPictureBox.Image != null)
-                {
-                    productPictureBox.Image.Dispose();
-                    productPictureBox.Image = null;
-                }
-
-                if (!string.IsNullOrEmpty(imagePath) && File.Exists(imagePath))
-                {
-                    using (FileStream fs = new FileStream(imagePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                    {
-                        productPictureBox.Image = Image.FromStream(fs);
-                    }
-                }
-                else
-                {
-                    productPictureBox.Image = ImageHelper.Placeholder != null ?
-                        (Image)ImageHelper.Placeholder.Clone() : null;
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка загрузки изображения: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                productPictureBox.Image = ImageHelper.Placeholder != null ?
-                    (Image)ImageHelper.Placeholder.Clone() : null;
-            }
-        }
-
+        // ==================== CRUD ====================
         private void addButton_Click(object sender, EventArgs e)
         {
             if (readOnlyMode) return;
-
             if (isEditMode)
             {
                 UpdateProduct(currentProductId);
                 return;
             }
-
-            if (!ValidateProductInput())
+            if (!ValidateProductInput()) return;
+            if (MessageBox.Show($"Добавить товар '{nameTextBox.Text.Trim()}'?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
             try
             {
+                string newArticle = GetNextArticle();
                 dynamic selectedCategory = categoryComboBox.SelectedItem;
 
                 string savedImagePath = null;
                 if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
-                {
-                    savedImagePath = SaveImageFromTemp(tempImagePath, articleTextBox.Text);
-                }
+                    savedImagePath = SaveImageFromTemp(tempImagePath, newArticle);
 
-                byte[] imageData = null;
-                if (!string.IsNullOrEmpty(savedImagePath) && File.Exists(savedImagePath))
+                int newProductId;
+                using (var conn = dbHelper.GetConnection())
                 {
-                    imageData = File.ReadAllBytes(savedImagePath);
-                }
-
-                using (var connection = dbHelper.GetConnection())
-                {
-                    connection.Open();
-
+                    conn.Open();
                     string checkQuery = "SELECT COUNT(*) FROM products WHERE article = @article";
-                    using (var checkCommand = new MySqlCommand(checkQuery, connection))
+                    using (var cmd = new MySqlCommand(checkQuery, conn))
                     {
-                        checkCommand.Parameters.AddWithValue("@article", articleTextBox.Text);
-                        int count = Convert.ToInt32(checkCommand.ExecuteScalar());
-
-                        if (count > 0)
+                        cmd.Parameters.AddWithValue("@article", newArticle);
+                        if (Convert.ToInt32(cmd.ExecuteScalar()) > 0)
                         {
-                            MessageBox.Show("Товар с таким артикулом уже существует", "Ошибка",
-                                MessageBoxButtons.OK, MessageBoxIcon.Error);
-
-                            if (!string.IsNullOrEmpty(savedImagePath))
-                            {
-                                DeleteImageFile(savedImagePath);
-                            }
+                            MessageBox.Show("Сгенерированный артикул уже существует. Попробуйте ещё раз.", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            if (!string.IsNullOrEmpty(savedImagePath)) DeleteImageFile(savedImagePath);
                             return;
                         }
                     }
 
-                    string query = @"INSERT INTO products (article, name, category_id, price, 
-                                   description, image) 
-                                   VALUES (@article, @name, @category_id, @price, 
-                                   @description, @image)";
-
-                    using (var command = new MySqlCommand(query, connection))
+                    string insertQuery = @"INSERT INTO products (article, name, category_id, price, description, image)
+                                           VALUES (@article, @name, @category_id, @price, @description, @image);
+                                           SELECT LAST_INSERT_ID();";
+                    using (var cmd = new MySqlCommand(insertQuery, conn))
                     {
-                        command.Parameters.AddWithValue("@article", articleTextBox.Text);
-                        command.Parameters.AddWithValue("@name", nameTextBox.Text);
-                        command.Parameters.AddWithValue("@category_id", selectedCategory.Id);
-                        command.Parameters.AddWithValue("@price", decimal.Parse(priceTextBox.Text));
-                        command.Parameters.AddWithValue("@description", descriptionTextBox.Text);
-                        command.Parameters.AddWithValue("@image", imageData ?? (object)DBNull.Value);
-
-                        command.ExecuteNonQuery();
-
-                        MessageBox.Show("Товар успешно добавлен", "Успех",
-                            MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                        ClearForm();
-                        LoadProductsPage(1);
+                        cmd.Parameters.AddWithValue("@article", newArticle);
+                        cmd.Parameters.AddWithValue("@name", nameTextBox.Text);
+                        cmd.Parameters.AddWithValue("@category_id", selectedCategory.Id);
+                        cmd.Parameters.AddWithValue("@price", ParsePriceForDb(priceTextBox.Text));
+                        cmd.Parameters.AddWithValue("@description", descriptionTextBox.Text);
+                        cmd.Parameters.AddWithValue("@image", DBNull.Value); // изображение храним отдельно
+                        newProductId = Convert.ToInt32(cmd.ExecuteScalar());
                     }
                 }
+
+                MessageBox.Show("Товар успешно добавлен", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                moveToTop = true;
+                highlightProductId = newProductId;
+
+                ClearForm();
+                ResetFormMode();
+                LoadProductsPage(1);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка добавления товара: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Ошибка добавления товара: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void editButton_Click(object sender, EventArgs e)
         {
             if (readOnlyMode) return;
-
             if (productsDataGridView.SelectedRows.Count == 0)
             {
-                MessageBox.Show("Выберите товар для редактирования", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Выберите товар для редактирования", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
-            DataGridViewRow selectedRow = productsDataGridView.SelectedRows[0];
-            currentProductId = Convert.ToInt32(selectedRow.Cells["id"].Value);
+            DataGridViewRow row = productsDataGridView.SelectedRows[0];
+            currentProductId = Convert.ToInt32(row.Cells["id"].Value);
 
-            articleTextBox.Text = selectedRow.Cells["article"].Value.ToString();
-            nameTextBox.Text = selectedRow.Cells["name"].Value.ToString();
-            priceTextBox.Text = selectedRow.Cells["price"].Value.ToString();
-            descriptionTextBox.Text = selectedRow.Cells["description"].Value?.ToString() ?? "";
+            nameTextBox.Text = row.Cells["name"].Value.ToString();
+            nameTextBox.ForeColor = Color.Black;
+            nameTextBox.BackColor = Color.White;
+            nameTextBox.ReadOnly = false;
 
-            string categoryName = selectedRow.Cells["category_name"].Value.ToString();
+            articleTextBox.Text = row.Cells["article"].Value.ToString();
+            articleTextBox.ForeColor = Color.Black;
+            articleTextBox.BackColor = Color.FromArgb(240, 240, 240);
+            articleTextBox.ReadOnly = true;
+
+            // В поле цена показываем "14,00" (две цифры после запятой, русская локаль)
+            decimal _editPrice;
+            if (row.Cells["price"].Value != null && decimal.TryParse(
+                    row.Cells["price"].Value.ToString().Replace(',', '.'),
+                    System.Globalization.NumberStyles.Number,
+                    System.Globalization.CultureInfo.InvariantCulture, out _editPrice))
+                priceTextBox.Text = _editPrice.ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"));
+            else
+                priceTextBox.Text = row.Cells["price"].Value?.ToString() ?? "";
+            priceTextBox.ForeColor = Color.Black;
+            priceTextBox.BackColor = Color.White;
+            priceTextBox.ReadOnly = false;
+
+            descriptionTextBox.Text = row.Cells["description"].Value?.ToString() ?? "";
+            descriptionTextBox.ForeColor = Color.Black;
+            descriptionTextBox.BackColor = Color.White;
+            descriptionTextBox.ReadOnly = false;
+
+            string catName = row.Cells["category_name"].Value.ToString();
             foreach (var item in categoryComboBox.Items)
             {
-                dynamic categoryItem = item;
-                if (categoryItem.Name == categoryName)
+                if ((item as dynamic).Name == catName)
                 {
                     categoryComboBox.SelectedItem = item;
                     break;
                 }
             }
+            categoryComboBox.Enabled = true;
 
-            // Загрузка изображения
-            if (selectedRow.Cells["image"].Value != null && selectedRow.Cells["image"].Value != DBNull.Value)
-            {
-                try
-                {
-                    byte[] imageData = (byte[])selectedRow.Cells["image"].Value;
-                    using (MemoryStream ms = new MemoryStream(imageData))
-                    {
-                        productPictureBox.Image = Image.FromStream(ms);
-                    }
-                }
-                catch
-                {
-                    productPictureBox.Image = ImageHelper.Placeholder != null ?
-                        (Image)ImageHelper.Placeholder.Clone() : null;
-                }
-            }
-            else
-            {
-                productPictureBox.Image = ImageHelper.Placeholder != null ?
-                    (Image)ImageHelper.Placeholder.Clone() : null;
-            }
+            // Загружаем изображение из GetProductImage
+            string article = row.Cells["article"].Value.ToString();
+            Image img = GetProductImage(article);
+            if (productPictureBox.Image != null) productPictureBox.Image.Dispose();
+            productPictureBox.Image = img;
 
-            if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
-            {
-                DeleteImageFile(tempImagePath);
-                tempImagePath = null;
-            }
+            DeleteImageFile(tempImagePath);
+            tempImagePath = null;
 
             isEditMode = true;
             addButton.Text = "Сохранить";
+            addImageButton.Visible = true;
+            removeImageButton.Visible = true;
         }
 
         private void UpdateProduct(int productId)
         {
-            if (!ValidateProductInput())
+            if (!ValidateProductInput()) return;
+            if (MessageBox.Show($"Сохранить изменения для товара '{nameTextBox.Text.Trim()}'?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
-
             try
             {
                 dynamic selectedCategory = categoryComboBox.SelectedItem;
                 bool imageChanged = !string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath);
-                string savedImagePath = null;
 
-                using (var connection = dbHelper.GetConnection())
+                using (var conn = dbHelper.GetConnection())
                 {
-                    connection.Open();
+                    conn.Open();
 
-                    string checkQuery = "SELECT COUNT(*) FROM products WHERE article = @article AND id != @id";
-                    using (var checkCommand = new MySqlCommand(checkQuery, connection))
+                    string updateQuery = @"UPDATE products SET name = @name, category_id = @category_id,
+                                           price = @price, description = @description
+                                           WHERE id = @id";
+                    using (var cmd = new MySqlCommand(updateQuery, conn))
                     {
-                        checkCommand.Parameters.AddWithValue("@article", articleTextBox.Text);
-                        checkCommand.Parameters.AddWithValue("@id", productId);
-                        int count = Convert.ToInt32(checkCommand.ExecuteScalar());
-
-                        if (count > 0)
-                        {
-                            MessageBox.Show("Товар с таким артикулом уже существует", "Ошибка",
-                                MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            return;
-                        }
-                    }
-
-                    if (imageChanged)
-                    {
-                        savedImagePath = SaveImageFromTemp(tempImagePath, articleTextBox.Text);
-                    }
-
-                    byte[] imageData = null;
-                    if (!string.IsNullOrEmpty(savedImagePath) && File.Exists(savedImagePath))
-                    {
-                        imageData = File.ReadAllBytes(savedImagePath);
-                    }
-                    else if (!imageChanged && productPictureBox.Image != null &&
-                             productPictureBox.Image != ImageHelper.Placeholder)
-                    {
-                        imageData = ImageHelper.ImageToByteArray(productPictureBox.Image);
-                    }
-
-                    string query = @"UPDATE products SET article = @article, name = @name, 
-                                   category_id = @category_id, price = @price, 
-                                   description = @description, image = @image 
-                                   WHERE id = @id";
-
-                    using (var command = new MySqlCommand(query, connection))
-                    {
-                        command.Parameters.AddWithValue("@article", articleTextBox.Text);
-                        command.Parameters.AddWithValue("@name", nameTextBox.Text);
-                        command.Parameters.AddWithValue("@category_id", selectedCategory.Id);
-                        command.Parameters.AddWithValue("@price", decimal.Parse(priceTextBox.Text));
-                        command.Parameters.AddWithValue("@description", descriptionTextBox.Text);
-                        command.Parameters.AddWithValue("@image", imageData ?? (object)DBNull.Value);
-                        command.Parameters.AddWithValue("@id", productId);
-
-                        command.ExecuteNonQuery();
-
-                        MessageBox.Show("Товар успешно обновлен", "Успех",
-                            MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                        ClearForm();
-                        LoadProductsPage(1);
-                        ResetFormMode();
+                        cmd.Parameters.AddWithValue("@name", nameTextBox.Text);
+                        cmd.Parameters.AddWithValue("@category_id", selectedCategory.Id);
+                        cmd.Parameters.AddWithValue("@price", ParsePriceForDb(priceTextBox.Text));
+                        cmd.Parameters.AddWithValue("@description", descriptionTextBox.Text);
+                        cmd.Parameters.AddWithValue("@id", productId);
+                        cmd.ExecuteNonQuery();
                     }
                 }
+
+                // Если изображение было изменено, сохраняем его в папку
+                if (imageChanged)
+                {
+                    string article = articleTextBox.Text;
+                    SaveImageFromTemp(tempImagePath, article);
+                }
+
+                MessageBox.Show("Товар успешно обновлён", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                moveToTop = true;
+                highlightProductId = productId;
+
+                ClearForm();
+                ResetFormMode();
+                LoadProductsPage(1);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка обновления товара: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Ошибка обновления товара: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void deleteButton_Click(object sender, EventArgs e)
         {
             if (readOnlyMode) return;
-
             if (productsDataGridView.SelectedRows.Count == 0)
             {
-                MessageBox.Show("Выберите товар для удаления", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Выберите товар для удаления", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
             int productId = Convert.ToInt32(productsDataGridView.SelectedRows[0].Cells["id"].Value);
             string productName = productsDataGridView.SelectedRows[0].Cells["name"].Value.ToString();
 
-            if (MessageBox.Show($"Вы уверены, что хотите удалить товар '{productName}'?\n" +
-                               "Все заказы, содержащие этот товар, также будут удалены!", "Подтверждение",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+            try
             {
-                try
+                using (var conn = dbHelper.GetConnection())
                 {
-                    using (var connection = dbHelper.GetConnection())
+                    conn.Open();
+                    string checkOrderQuery = "SELECT COUNT(*) FROM order_items WHERE product_id = @productId";
+                    using (var cmd = new MySqlCommand(checkOrderQuery, conn))
                     {
-                        connection.Open();
-
-                        using (var transaction = connection.BeginTransaction())
+                        cmd.Parameters.AddWithValue("@productId", productId);
+                        if (Convert.ToInt32(cmd.ExecuteScalar()) > 0)
                         {
-                            try
-                            {
-                                string getOrdersQuery = @"SELECT DISTINCT oi.order_id 
-                                                FROM order_items oi 
-                                                WHERE oi.product_id = @product_id";
-
-                                List<int> orderIds = new List<int>();
-                                using (var getOrdersCommand = new MySqlCommand(getOrdersQuery, connection, transaction))
-                                {
-                                    getOrdersCommand.Parameters.AddWithValue("@product_id", productId);
-                                    using (var reader = getOrdersCommand.ExecuteReader())
-                                    {
-                                        while (reader.Read())
-                                        {
-                                            orderIds.Add(reader.GetInt32(0));
-                                        }
-                                    }
-                                }
-
-                                string deleteOrderItemsQuery = "DELETE FROM order_items WHERE product_id = @product_id";
-                                using (var deleteOrderItemsCommand = new MySqlCommand(deleteOrderItemsQuery, connection, transaction))
-                                {
-                                    deleteOrderItemsCommand.Parameters.AddWithValue("@product_id", productId);
-                                    deleteOrderItemsCommand.ExecuteNonQuery();
-                                }
-
-                                string deleteProductQuery = "DELETE FROM products WHERE id = @id";
-                                using (var deleteProductCommand = new MySqlCommand(deleteProductQuery, connection, transaction))
-                                {
-                                    deleteProductCommand.Parameters.AddWithValue("@id", productId);
-                                    deleteProductCommand.ExecuteNonQuery();
-                                }
-
-                                foreach (int orderId in orderIds)
-                                {
-                                    string checkOrderQuery = "SELECT COUNT(*) FROM order_items WHERE order_id = @order_id";
-                                    using (var checkCommand = new MySqlCommand(checkOrderQuery, connection, transaction))
-                                    {
-                                        checkCommand.Parameters.AddWithValue("@order_id", orderId);
-                                        int remainingItems = Convert.ToInt32(checkCommand.ExecuteScalar());
-
-                                        if (remainingItems == 0)
-                                        {
-                                            string deleteOrderQuery = "DELETE FROM orders WHERE id = @order_id";
-                                            using (var deleteOrderCommand = new MySqlCommand(deleteOrderQuery, connection, transaction))
-                                            {
-                                                deleteOrderCommand.Parameters.AddWithValue("@order_id", orderId);
-                                                deleteOrderCommand.ExecuteNonQuery();
-                                            }
-                                        }
-                                    }
-                                }
-
-                                transaction.Commit();
-
-                                if (orderIds.Count > 0)
-                                {
-                                    MessageBox.Show($"Товар удален.\n" +
-                                                  $"Было удалено {orderIds.Count} заказов, содержащих этот товар.", "Успех",
-                                        MessageBoxButtons.OK, MessageBoxIcon.Information);
-                                }
-                                else
-                                {
-                                    MessageBox.Show("Товар удален", "Успех",
-                                        MessageBoxButtons.OK, MessageBoxIcon.Information);
-                                }
-
-                                LoadProductsPage(1);
-                            }
-                            catch (Exception ex)
-                            {
-                                transaction.Rollback();
-                                throw new Exception($"Ошибка удаления товара: {ex.Message}");
-                            }
+                            MessageBox.Show("Невозможно удалить товар, так как он присутствует в заказах.", "Удаление невозможно", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            return;
                         }
                     }
+
+                    if (MessageBox.Show($"Удалить товар '{productName}'?", "Подтверждение", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                    {
+                        string deleteQuery = "DELETE FROM products WHERE id = @id";
+                        using (var cmd = new MySqlCommand(deleteQuery, conn))
+                        {
+                            cmd.Parameters.AddWithValue("@id", productId);
+                            cmd.ExecuteNonQuery();
+                        }
+                        // Удаляем файл изображения, если есть
+                        string article = productsDataGridView.SelectedRows[0].Cells["article"].Value.ToString();
+                        DeleteImageFile(Path.Combine(imagesFolderPath, article + ".jpg"));
+                        DeleteImageFile(Path.Combine(imagesFolderPath, article + ".png"));
+                        MessageBox.Show("Товар удалён", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        LoadProductsPage(1);
+                    }
                 }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Ошибка удаления товара: {ex.Message}", "Ошибка",
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка удаления товара: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
+        // ==================== Кнопки изображений ====================
+        // Сжимаем картинку до 2 МБ. Если уложиться не удалось, но исходник <= 2.5 МБ —
+        // принимаем его как есть. Если исходник > 2.5 МБ — отказываем.
         private void addImageButton_Click(object sender, EventArgs e)
         {
             if (readOnlyMode) return;
-
-            OpenFileDialog openFileDialog = new OpenFileDialog();
-            openFileDialog.Filter = "Изображения (*.jpg;*.jpeg;*.png;*.bmp;*.gif)|*.jpg;*.jpeg;*.png;*.bmp;*.gif";
-            openFileDialog.Title = "Выберите изображение товара";
-            openFileDialog.Multiselect = false;
-
-            if (openFileDialog.ShowDialog() == DialogResult.OK)
+            using (OpenFileDialog ofd = new OpenFileDialog())
             {
-                try
+                ofd.Filter = "Изображения|*.jpg;*.jpeg;*.png;*.bmp;*.gif";
+                ofd.Title = "Выберите изображение товара";
+                if (ofd.ShowDialog() == DialogResult.OK)
                 {
-                    Image selectedImage;
-                    using (FileStream fs = new FileStream(openFileDialog.FileName, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    try
                     {
-                        selectedImage = Image.FromStream(fs);
-                    }
+                        long originalSize = new FileInfo(ofd.FileName).Length;
 
-                    int maxWidth = 150;
-                    int maxHeight = 150;
+                        Image img = Image.FromFile(ofd.FileName);
 
-                    double ratioX = (double)maxWidth / selectedImage.Width;
-                    double ratioY = (double)maxHeight / selectedImage.Height;
-                    double ratio = Math.Min(ratioX, ratioY);
+                        // Пробуем сжать до 2 МБ
+                        string compressed = CompressImageToMaxSize(img, IMAGE_TARGET_BYTES);
 
-                    int newWidth = (int)(selectedImage.Width * ratio);
-                    int newHeight = (int)(selectedImage.Height * ratio);
+                        if (compressed == null)
+                        {
+                            // Сжать до 2 МБ не получилось.
+                            // Если исходник укладывается в 2.5 МБ — оставляем как есть.
+                            if (originalSize <= IMAGE_HARD_LIMIT_BYTES)
+                            {
+                                compressed = SaveImageAsIs(img);
+                            }
+                            else
+                            {
+                                img.Dispose();
+                                MessageBox.Show(
+                                    "Не удалось сжать изображение до 2 МБ, а исходный файл больше 2,5 МБ. Выберите другое изображение.",
+                                    "Ошибка размера", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                return;
+                            }
+                        }
 
-                    Bitmap resizedImage = new Bitmap(newWidth, newHeight);
-                    using (Graphics g = Graphics.FromImage(resizedImage))
-                    {
-                        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                        g.DrawImage(selectedImage, 0, 0, newWidth, newHeight);
-                    }
+                        img.Dispose();
 
-                    selectedImage.Dispose();
-
-                    if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
-                    {
                         DeleteImageFile(tempImagePath);
-                    }
-
-                    tempImagePath = SaveImageToTemp(resizedImage);
-                    resizedImage.Dispose();
-
-                    if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
-                    {
+                        tempImagePath = compressed;
                         LoadImageToPictureBox(tempImagePath);
+                        MessageBox.Show("Изображение выбрано. Оно будет сохранено после нажатия «Добавить» или «Сохранить».", "Информация", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
-
-                    MessageBox.Show("Изображение выбрано. Оно будет сохранено после нажатия кнопки 'Добавить' или 'Сохранить'",
-                        "Информация", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Ошибка загрузки изображения: {ex.Message}", "Ошибка",
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Ошибка загрузки изображения: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
                 }
             }
         }
@@ -1095,31 +1016,33 @@ namespace Smirnov_kursovaya.secondForm
         private void removeImageButton_Click(object sender, EventArgs e)
         {
             if (readOnlyMode) return;
-
-            if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
-            {
-                DeleteImageFile(tempImagePath);
-                tempImagePath = null;
-            }
-
+            DeleteImageFile(tempImagePath);
+            tempImagePath = null;
             if (productPictureBox.Image != null)
             {
                 productPictureBox.Image.Dispose();
                 productPictureBox.Image = null;
             }
-            productPictureBox.Image = ImageHelper.Placeholder != null ?
-                (Image)ImageHelper.Placeholder.Clone() : null;
+            productPictureBox.Image = ImageHelper.Placeholder?.Clone() as Image;
         }
 
+        // ==================== Вспомогательные методы ====================
         private void ClearForm()
         {
             nameTextBox.Text = "Название товара";
             nameTextBox.ForeColor = Color.Gray;
-            articleTextBox.Text = "Артикул (только цифры)";
+            nameTextBox.BackColor = Color.White;
+            nameTextBox.ReadOnly = false;
+
+            articleTextBox.Text = "Авто";
             articleTextBox.ForeColor = Color.Gray;
-            priceTextBox.Text = "Цена (например: 1000.50)";
+            articleTextBox.BackColor = Color.FromArgb(240, 240, 240);
+
+            priceTextBox.Text = "Цена (до 999)";
             priceTextBox.ForeColor = Color.Gray;
-            descriptionTextBox.Clear();
+            priceTextBox.BackColor = Color.White;
+
+            descriptionTextBox.Text = "";
             categoryComboBox.SelectedIndex = -1;
 
             if (productPictureBox.Image != null)
@@ -1127,16 +1050,10 @@ namespace Smirnov_kursovaya.secondForm
                 productPictureBox.Image.Dispose();
                 productPictureBox.Image = null;
             }
-            productPictureBox.Image = ImageHelper.Placeholder != null ?
-                (Image)ImageHelper.Placeholder.Clone() : null;
+            productPictureBox.Image = ImageHelper.Placeholder?.Clone() as Image;
 
-            if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
-            {
-                DeleteImageFile(tempImagePath);
-                tempImagePath = null;
-            }
-
-            currentImagePathInDb = null;
+            DeleteImageFile(tempImagePath);
+            tempImagePath = null;
         }
 
         private void ResetFormMode()
@@ -1144,119 +1061,140 @@ namespace Smirnov_kursovaya.secondForm
             isEditMode = false;
             currentProductId = 0;
             addButton.Text = "Добавить";
-
-            if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
+            DeleteImageFile(tempImagePath);
+            tempImagePath = null;
+            if (!readOnlyMode)
             {
-                DeleteImageFile(tempImagePath);
-                tempImagePath = null;
+                addImageButton.Visible = true;
+                removeImageButton.Visible = true;
             }
-            currentImagePathInDb = null;
         }
 
         private void productsDataGridView_SelectionChanged(object sender, EventArgs e)
         {
             if (productsDataGridView.SelectedRows.Count > 0 && !isEditMode)
             {
-                DataGridViewRow selectedRow = productsDataGridView.SelectedRows[0];
-
-                if (selectedRow.Cells["image"].Value != null && selectedRow.Cells["image"].Value != DBNull.Value)
+                DataGridViewRow row = productsDataGridView.SelectedRows[0];
+                string article = row.Cells["article"].Value?.ToString();
+                if (!string.IsNullOrEmpty(article))
                 {
-                    try
-                    {
-                        byte[] imageData = (byte[])selectedRow.Cells["image"].Value;
-                        using (MemoryStream ms = new MemoryStream(imageData))
-                        {
-                            if (productPictureBox.Image != null)
-                            {
-                                productPictureBox.Image.Dispose();
-                            }
-                            productPictureBox.Image = Image.FromStream(ms);
-                        }
-                    }
-                    catch
-                    {
-                        if (productPictureBox.Image != null)
-                        {
-                            productPictureBox.Image.Dispose();
-                        }
-                        productPictureBox.Image = ImageHelper.Placeholder != null ?
-                            (Image)ImageHelper.Placeholder.Clone() : null;
-                    }
+                    Image img = GetProductImage(article);
+                    if (productPictureBox.Image != null) productPictureBox.Image.Dispose();
+                    productPictureBox.Image = img;
                 }
                 else
                 {
-                    if (productPictureBox.Image != null)
-                    {
-                        productPictureBox.Image.Dispose();
-                    }
-                    productPictureBox.Image = ImageHelper.Placeholder != null ?
-                        (Image)ImageHelper.Placeholder.Clone() : null;
+                    if (productPictureBox.Image != null) productPictureBox.Image.Dispose();
+                    productPictureBox.Image = ImageHelper.Placeholder?.Clone() as Image;
                 }
-            }
-        }
-
-        private void nameTextBox_KeyPress(object sender, KeyPressEventArgs e)
-        {
-            // разрешаем все символы
-        }
-
-        private void articleTextBox_KeyPress(object sender, KeyPressEventArgs e)
-        {
-            if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar))
-            {
-                e.Handled = true;
-            }
-        }
-
-        private void priceTextBox_KeyPress(object sender, KeyPressEventArgs e)
-        {
-            if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar) && e.KeyChar != ',' && e.KeyChar != '.')
-            {
-                e.Handled = true;
-            }
-
-            if (e.KeyChar == ',')
-            {
-                e.KeyChar = '.';
-            }
-
-            if ((e.KeyChar == '.') && ((sender as TextBox).Text.IndexOf('.') > -1))
-            {
-                e.Handled = true;
             }
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            if (!string.IsNullOrEmpty(tempImagePath) && File.Exists(tempImagePath))
-            {
-                try
-                {
-                    DeleteImageFile(tempImagePath);
-                }
-                catch { }
-            }
-
+            DeleteImageFile(tempImagePath);
             if (productPictureBox.Image != null)
             {
                 productPictureBox.Image.Dispose();
                 productPictureBox.Image = null;
             }
-
             base.OnFormClosing(e);
         }
 
-        protected override void OnResize(EventArgs e)
+        private void groupBox1_Enter(object sender, EventArgs e) { }
+
+        // ==================== Стилизация кнопок ====================
+        private void ApplyCoralButtonStyle()
         {
-            if (readOnlyMode && productsDataGridView != null && groupBox1 != null && !groupBox1.Visible)
+            Color coral = Color.FromArgb(255, 127, 80);
+            Color coralLight = Color.FromArgb(255, 147, 100);
+            Color coralDark = Color.FromArgb(235, 107, 60);
+
+            foreach (Control ctrl in this.Controls)
             {
-                productsDataGridView.Top = categoryFilterComboBox.Bottom + 30;
-                productsDataGridView.Left = 10;
-                productsDataGridView.Width = this.ClientSize.Width - 20;
-                productsDataGridView.Height = this.ClientSize.Height - productsDataGridView.Top - 10;
+                if (ctrl is Button btn)
+                    ApplyButtonStyle(btn, coral, coralLight, coralDark);
+                else if (ctrl is GroupBox group)
+                    foreach (Control groupInner in group.Controls)
+                        if (groupInner is Button groupBtn)
+                            ApplyButtonStyle(groupBtn, coral, coralLight, coralDark);
+                        else if (ctrl is Panel panel)
+                            foreach (Control panelInner in panel.Controls)
+                                if (panelInner is Button panelBtn)
+                                    ApplyButtonStyle(panelBtn, coral, coralLight, coralDark);
+            }
+
+            if (menuButton != null)
+            {
+                menuButton.BackColor = Color.Red;
+                menuButton.FlatStyle = FlatStyle.Flat;
+                menuButton.FlatAppearance.BorderColor = Color.DarkRed;
+                menuButton.FlatAppearance.BorderSize = 1;
+                menuButton.ForeColor = Color.Black;
+                menuButton.Font = new Font(menuButton.Font, FontStyle.Regular);
+                menuButton.MouseEnter += (s, e) => menuButton.BackColor = Color.IndianRed;
+                menuButton.MouseLeave += (s, e) => menuButton.BackColor = Color.Red;
+                menuButton.MouseDown += (s, e) => menuButton.BackColor = Color.OrangeRed;
+                menuButton.MouseUp += (s, e) => menuButton.BackColor = Color.OrangeRed;
             }
         }
 
-        private void groupBox1_Enter(object sender, EventArgs e) { }
+        private void ApplyButtonStyle(Button button, Color normal, Color hover, Color pressed)
+        {
+            button.BackColor = normal;
+            button.FlatStyle = FlatStyle.Flat;
+            button.FlatAppearance.BorderColor = Color.FromArgb(235, 107, 60);
+            button.FlatAppearance.BorderSize = 1;
+            button.ForeColor = Color.Black;
+            button.Font = new Font(button.Font, FontStyle.Regular);
+            button.MouseEnter += (s, e) => button.BackColor = hover;
+            button.MouseLeave += (s, e) => button.BackColor = normal;
+            button.MouseDown += (s, e) => button.BackColor = pressed;
+            button.MouseUp += (s, e) => button.BackColor = hover;
+        }
+
+        private void SetPlaceholderText(TextBox textBox, string placeholder)
+        {
+            if (string.IsNullOrEmpty(textBox.Text))
+            {
+                textBox.Text = placeholder;
+                textBox.ForeColor = Color.Gray;
+            }
+            textBox.Enter += (s, e) =>
+            {
+                if (textBox.Text == placeholder)
+                {
+                    textBox.Text = "";
+                    textBox.ForeColor = Color.Black;
+                }
+            };
+            textBox.Leave += (s, e) =>
+            {
+                if (string.IsNullOrWhiteSpace(textBox.Text))
+                {
+                    textBox.Text = placeholder;
+                    textBox.ForeColor = Color.Gray;
+                }
+            };
+        }
+
+        // Растяжение на весь экран — главная сетка тянется, панель пагинации якорится снизу,
+        // правая часть (категория/сортировка/сброс) уезжает вправо при росте окна.
+        private void SetupResponsiveLayout()
+        {
+            this.MinimumSize = new Size(1000, 700);
+            this.WindowState = FormWindowState.Maximized;
+
+            if (productsDataGridView != null)
+                productsDataGridView.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+
+            if (paginationPanel != null)
+                paginationPanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+
+            if (categoryFilterComboBox != null) categoryFilterComboBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            if (categoryFilterLabel != null) categoryFilterLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            if (sortButton != null) sortButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            if (resetButton != null) resetButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        }
     }
 }

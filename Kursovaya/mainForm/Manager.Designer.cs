@@ -135,6 +135,7 @@
             this.Name = "Manager";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "Менеджер";
+            this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.Manager_FormClosing);
             this.Load += new System.EventHandler(this.Manager_Load);
             this.sidePanel.ResumeLayout(false);
             this.ResumeLayout(false);

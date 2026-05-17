@@ -151,6 +151,7 @@
             this.Name = "Seller";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "Продавец";
+            this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.Seller_FormClosing);
             this.Load += new System.EventHandler(this.Seller_Load);
             this.sidePanel.ResumeLayout(false);
             this.ResumeLayout(false);

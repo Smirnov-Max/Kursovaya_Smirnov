@@ -1,20 +1,18 @@
 ﻿using System;
 using System.Data;
 using System.Drawing;
-using System.Windows.Forms;
-using MySql.Data.MySqlClient;
-using Smirnov_kursovaya.Database;
 using System.IO;
 using System.Text;
 using System.Collections.Generic;
+using System.Windows.Forms;
+using MySql.Data.MySqlClient;
+using Smirnov_kursovaya.Database;
 
 namespace Smirnov_kursovaya.secondForm
 {
     public partial class ReferencesForm : Form
     {
         private DatabaseHelper dbHelper;
-        private string currentTable = "";
-        private Panel currentPanel;
 
         public ReferencesForm()
         {
@@ -22,117 +20,438 @@ namespace Smirnov_kursovaya.secondForm
             dbHelper = new DatabaseHelper();
             InitializeControls();
             LoadReferenceTables();
-
-            // Применяем стиль после инициализации всех элементов
             this.Load += (s, e) => ApplyCoralButtonStyle();
         }
 
         private void InitializeControls()
         {
-            // Настройка DataGridView
-            categoriesDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            categoriesDataGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            categoriesDataGridView.ReadOnly = true;
-            categoriesDataGridView.RowHeadersVisible = false;
-
-            statusesDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            statusesDataGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            statusesDataGridView.ReadOnly = true;
-            statusesDataGridView.RowHeadersVisible = false;
-
-            rolesDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            rolesDataGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            rolesDataGridView.ReadOnly = true;
-            rolesDataGridView.RowHeadersVisible = false;
-
-            customTableDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            customTableDataGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            customTableDataGridView.ReadOnly = true;
-            customTableDataGridView.RowHeadersVisible = false;
-
-            // Настройка стиля сетки
-            customTableDataGridView.GridColor = Color.LightGray;
-            customTableDataGridView.CellBorderStyle = DataGridViewCellBorderStyle.Single;
-
-            // Подсказки для текстовых полей
-            SetPlaceholderText(categoryNameTextBox, "Название категории");
-            SetPlaceholderText(categoryDescTextBox, "Описание категории");
-            SetPlaceholderText(statusNameTextBox, "Название статуса");
-            SetPlaceholderText(statusDescTextBox, "Описание статуса");
-            SetPlaceholderText(roleNameTextBox, "Название роли");
-            SetPlaceholderText(roleDescTextBox, "Описание роли");
-            SetPlaceholderText(newTableNameTextBox, "Имя новой таблицы");
-            SetPlaceholderText(customNameTextBox, "Название записи");
-            SetPlaceholderText(customDescTextBox, "Описание записи");
-
-            // Изначально показываем панель категорий
+            ConfigureGrid(categoriesDataGridView);
+            ConfigureGrid(statusesDataGridView);
             ShowPanel("categories");
+            SetupResponsiveLayout();
 
-            foreach (Control control in this.Controls)
+            // Гарантируем, что нижняя панель кнопок всегда сверху Z-стека.
+            if (bottomActionsPanel != null) bottomActionsPanel.BringToFront();
+            if (panel1 != null) panel1.BringToFront();
+        }
+
+        private void SetupResponsiveLayout()
+        {
+            this.MinimumSize = new Size(916, 640);
+            this.WindowState = FormWindowState.Maximized;
+
+            // Главные панели должны тянуться по всему окну (под верхним меню),
+            // но НЕ перекрывать нижнюю панель действий (Dock=Bottom).
+            if (categoriesPanel != null)
+                categoriesPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            if (statusesPanel != null)
+                statusesPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+
+            if (categoriesDataGridView != null)
+                categoriesDataGridView.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            if (statusesDataGridView != null)
+                statusesDataGridView.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+
+            this.Resize += (s, e) => AdjustReferencePanels();
+            AdjustReferencePanels();
+        }
+
+        // Подгоняем размеры панелей категорий/статусов так, чтобы они
+        // не перекрывали bottomActionsPanel (Dock=Bottom, высота 60).
+        private void AdjustReferencePanels()
+        {
+            int topOffset = categoriesPanel != null ? categoriesPanel.Top : 102;
+            int bottomReserve = bottomActionsPanel != null ? bottomActionsPanel.Height : 60;
+
+            int availableHeight = this.ClientSize.Height - topOffset - bottomReserve;
+            if (availableHeight < 200) availableHeight = 200;
+
+            if (categoriesPanel != null)
             {
-                if (control is DataGridView dgv)
-                {
-                    dgv.DataBindingComplete += (s, e) => {
-                        if (dgv.Columns.Contains("id"))
-                        {
-                            dgv.Columns["id"].Visible = false;
-                        }
-                    };
-                }
+                categoriesPanel.Size = new Size(this.ClientSize.Width, availableHeight);
+                int gridLeft = categoriesDataGridView != null ? categoriesDataGridView.Left : 330;
+                int margin = 12;
+                if (categoriesDataGridView != null)
+                    categoriesDataGridView.Size = new Size(categoriesPanel.ClientSize.Width - gridLeft - margin,
+                                                           categoriesPanel.ClientSize.Height - margin * 2);
+            }
+            if (statusesPanel != null)
+            {
+                statusesPanel.Size = new Size(this.ClientSize.Width, availableHeight);
+                int gridLeft = statusesDataGridView != null ? statusesDataGridView.Left : 330;
+                int margin = 12;
+                if (statusesDataGridView != null)
+                    statusesDataGridView.Size = new Size(statusesPanel.ClientSize.Width - gridLeft - margin,
+                                                         statusesPanel.ClientSize.Height - margin * 2);
             }
         }
 
+        private void ConfigureGrid(DataGridView dgv)
+        {
+            dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            dgv.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            dgv.ReadOnly = true;
+            dgv.RowHeadersVisible = false;
+            dgv.GridColor = Color.LightGray;
+            dgv.CellBorderStyle = DataGridViewCellBorderStyle.Single;
+            dgv.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 240, 255);
+            dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(230, 210, 250);
+            dgv.DefaultCellStyle.SelectionForeColor = Color.Black;
+            dgv.DefaultCellStyle.Font = new Font("Segoe UI", 10);
+            dgv.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(255, 127, 80);
+            dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
+            dgv.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
+            dgv.ColumnHeadersHeight = 40;
+            dgv.EnableHeadersVisualStyles = false;
+        }
+
+        private void ApplyCoralButtonStyle()
+        {
+            Color coral = Color.FromArgb(255, 127, 80);
+            Color coralLight = Color.FromArgb(255, 147, 100);
+            Color coralDark = Color.FromArgb(235, 107, 60);
+            ApplyStyleToAllButtons(this, coral, coralLight, coralDark);
+
+            if (menuButton != null)
+            {
+                menuButton.BackColor = Color.Red;
+                menuButton.FlatStyle = FlatStyle.Flat;
+                menuButton.FlatAppearance.BorderColor = Color.DarkRed;
+                menuButton.FlatAppearance.BorderSize = 1;
+                menuButton.ForeColor = Color.Black;
+                menuButton.MouseEnter += (s, e) => menuButton.BackColor = Color.IndianRed;
+                menuButton.MouseLeave += (s, e) => menuButton.BackColor = Color.Red;
+                menuButton.MouseDown += (s, e) => menuButton.BackColor = Color.OrangeRed;
+                menuButton.MouseUp += (s, e) => menuButton.BackColor = Color.IndianRed;
+            }
+        }
+
+        private void ApplyStyleToAllButtons(Control parent, Color normal, Color hover, Color pressed)
+        {
+            foreach (Control c in parent.Controls)
+            {
+                if (c is Button btn && btn != menuButton)
+                    ApplyButtonStyle(btn, normal, hover, pressed);
+                else if (c.HasChildren)
+                    ApplyStyleToAllButtons(c, normal, hover, pressed);
+            }
+        }
+
+        private void ApplyButtonStyle(Button btn, Color normal, Color hover, Color pressed)
+        {
+            btn.BackColor = normal;
+            btn.FlatStyle = FlatStyle.Flat;
+            btn.FlatAppearance.BorderColor = Color.FromArgb(235, 107, 60);
+            btn.FlatAppearance.BorderSize = 1;
+            btn.ForeColor = Color.Black;
+            btn.MouseEnter += (s, e) => btn.BackColor = hover;
+            btn.MouseLeave += (s, e) => btn.BackColor = normal;
+            btn.MouseDown += (s, e) => btn.BackColor = pressed;
+            btn.MouseUp += (s, e) => btn.BackColor = hover;
+        }
+
+        private void ReferencesForm_Load(object sender, EventArgs e) { }
+
+        private void LoadReferenceTables()
+        {
+            LoadCategories();
+            LoadStatuses();
+        }
+
+        private void LoadCategories()
+        {
+            try
+            {
+                using (var conn = dbHelper.GetConnection())
+                {
+                    conn.Open();
+                    string query = "SELECT id, name FROM categories ORDER BY name";
+                    using (var cmd = new MySqlCommand(query, conn))
+                    using (var adapter = new MySqlDataAdapter(cmd))
+                    {
+                        DataTable dt = new DataTable();
+                        adapter.Fill(dt);
+                        categoriesDataGridView.DataSource = dt;
+                        if (categoriesDataGridView.Columns.Count > 0)
+                        {
+                            categoriesDataGridView.Columns["id"].Visible = false;
+                            categoriesDataGridView.Columns["name"].HeaderText = "Название";
+                        }
+                    }
+                }
+                categoryCountLabel.Text = $"Записей: {categoriesDataGridView.RowCount}";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка загрузки категорий: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void LoadStatuses()
+        {
+            try
+            {
+                using (var conn = dbHelper.GetConnection())
+                {
+                    conn.Open();
+                    string query = "SELECT id, name FROM statuses ORDER BY name";
+                    using (var cmd = new MySqlCommand(query, conn))
+                    using (var adapter = new MySqlDataAdapter(cmd))
+                    {
+                        DataTable dt = new DataTable();
+                        adapter.Fill(dt);
+                        statusesDataGridView.DataSource = dt;
+                        if (statusesDataGridView.Columns.Count > 0)
+                        {
+                            statusesDataGridView.Columns["id"].Visible = false;
+                            statusesDataGridView.Columns["name"].HeaderText = "Название";
+                        }
+                    }
+                }
+                statusCountLabel.Text = $"Записей: {statusesDataGridView.RowCount}";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка загрузки статусов: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // ===== Категории =====
+        private void addCategoryButton_Click(object sender, EventArgs e)
+        {
+            AddItem("categories", "категорию", categoryNameTextBox, LoadCategories);
+        }
+        private void editCategoryButton_Click(object sender, EventArgs e)
+        {
+            EditItem(categoriesDataGridView, "categories", "категорию", categoryNameTextBox, LoadCategories);
+        }
+        private void deleteCategoryButton_Click(object sender, EventArgs e)
+        {
+            DeleteItem(categoriesDataGridView, "categories", "категорию", LoadCategories);
+        }
+
+        // ===== Статусы =====
+        private void addStatusButton_Click(object sender, EventArgs e)
+        {
+            AddItem("statuses", "статус", statusNameTextBox, LoadStatuses);
+        }
+        private void editStatusButton_Click(object sender, EventArgs e)
+        {
+            EditItem(statusesDataGridView, "statuses", "статус", statusNameTextBox, LoadStatuses);
+        }
+        private void deleteStatusButton_Click(object sender, EventArgs e)
+        {
+            DeleteItem(statusesDataGridView, "statuses", "статус", LoadStatuses);
+        }
+
+        private void AddItem(string tableName, string itemType, TextBox nameTextBox, Action loadMethod)
+        {
+            string name = nameTextBox.Text.Trim();
+            if (string.IsNullOrEmpty(name))
+            {
+                MessageBox.Show($"Введите название ({itemType})", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            if (MessageBox.Show($"Добавить {itemType} \"{name}\"?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+            try
+            {
+                using (var conn = dbHelper.GetConnection())
+                {
+                    conn.Open();
+                    string check = $"SELECT COUNT(*) FROM {tableName} WHERE name = @name";
+                    using (var cmd = new MySqlCommand(check, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@name", name);
+                        if (Convert.ToInt32(cmd.ExecuteScalar()) > 0)
+                        {
+                            MessageBox.Show("Такое название уже существует", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            return;
+                        }
+                    }
+                    string query = $"INSERT INTO {tableName} (name) VALUES (@name)";
+                    using (var cmd = new MySqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@name", name);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+                MessageBox.Show("Запись добавлена", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                nameTextBox.Text = "";
+                loadMethod();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void EditItem(DataGridView grid, string tableName, string itemType, TextBox nameTextBox, Action loadMethod)
+        {
+            if (grid.SelectedRows.Count == 0)
+            {
+                MessageBox.Show("Выберите запись для редактирования", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            int id = Convert.ToInt32(grid.SelectedRows[0].Cells["id"].Value);
+            if (IsSystemReference(tableName, id))
+            {
+                MessageBox.Show("Нельзя редактировать системную запись", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            string name = nameTextBox.Text.Trim();
+            if (string.IsNullOrEmpty(name))
+            {
+                MessageBox.Show("Введите новое название", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            if (MessageBox.Show($"Сохранить изменения для {itemType} \"{name}\"?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+            try
+            {
+                using (var conn = dbHelper.GetConnection())
+                {
+                    conn.Open();
+                    string check = $"SELECT COUNT(*) FROM {tableName} WHERE name = @name AND id != @id";
+                    using (var cmd = new MySqlCommand(check, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@name", name);
+                        cmd.Parameters.AddWithValue("@id", id);
+                        if (Convert.ToInt32(cmd.ExecuteScalar()) > 0)
+                        {
+                            MessageBox.Show("Такое название уже существует", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            return;
+                        }
+                    }
+                    string query = $"UPDATE {tableName} SET name = @name WHERE id = @id";
+                    using (var cmd = new MySqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@name", name);
+                        cmd.Parameters.AddWithValue("@id", id);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+                MessageBox.Show("Запись обновлена", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                nameTextBox.Text = "";
+                loadMethod();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void DeleteItem(DataGridView grid, string tableName, string itemType, Action loadMethod)
+        {
+            if (grid.SelectedRows.Count == 0)
+            {
+                MessageBox.Show("Выберите запись для удаления", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            int id = Convert.ToInt32(grid.SelectedRows[0].Cells["id"].Value);
+            string name = grid.SelectedRows[0].Cells["name"].Value.ToString();
+            if (IsSystemReference(tableName, id))
+            {
+                MessageBox.Show("Нельзя удалять системную запись", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            if (MessageBox.Show($"Удалить запись \"{name}\"?", "Подтверждение", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+            try
+            {
+                using (var conn = dbHelper.GetConnection())
+                {
+                    conn.Open();
+                    string query = $"DELETE FROM {tableName} WHERE id = @id";
+                    using (var cmd = new MySqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@id", id);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+                MessageBox.Show("Запись удалена", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                loadMethod();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // Проверяем, что текущий пользователь — системный администратор. Бекап и восстановление БД
+        // должны быть доступны только ему.
+        private bool IsCurrentUserAdmin()
+        {
+            var current = mainForm.UserContext.CurrentUser;
+            if (current == null) return false;
+            return current.Role == "Системный администратор";
+        }
+
+        private bool IsSystemReference(string tableName, int id)
+        {
+            try
+            {
+                using (var conn = dbHelper.GetConnection())
+                {
+                    conn.Open();
+                    string query = $"SELECT name FROM {tableName} WHERE id = @id";
+                    using (var cmd = new MySqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@id", id);
+                        string name = cmd.ExecuteScalar()?.ToString();
+                        if (tableName == "roles")
+                        {
+                            string[] sysRoles = { "Системный администратор", "Менеджер", "Продавец-консультант" };
+                            return Array.Exists(sysRoles, r => r == name);
+                        }
+                        else if (tableName == "statuses")
+                        {
+                            string[] sysStatuses = { "Новый", "В обработке", "Выполнен", "Отменен", "Принят", "Завершен", "Отменён" };
+                            return Array.Exists(sysStatuses, s => s == name);
+                        }
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        // ===== Экспорт CSV =====
         private void btnExportAll_Click(object sender, EventArgs e)
         {
             using (var folderDialog = new FolderBrowserDialog())
             {
                 folderDialog.Description = "Выберите папку для сохранения CSV-файлов";
                 folderDialog.ShowNewFolderButton = true;
-                if (folderDialog.ShowDialog() == DialogResult.OK)
+                if (folderDialog.ShowDialog() != DialogResult.OK) return;
+
+                string folderPath = folderDialog.SelectedPath;
+                var tables = dbHelper.GetTableList();
+                int success = 0, failed = 0;
+                var errors = new List<string>();
+
+                foreach (string table in tables)
                 {
-                    string folderPath = folderDialog.SelectedPath;
-                    ExportAllTablesToCsv(folderPath);
+                    try
+                    {
+                        ExportTableToCsv(table, Path.Combine(folderPath, table + ".csv"));
+                        success++;
+                    }
+                    catch (Exception ex)
+                    {
+                        failed++;
+                        errors.Add($"{table}: {ex.Message}");
+                    }
                 }
+
+                string message = $"Экспорт завершён.\nУспешно: {success}\nОшибок: {failed}";
+                if (errors.Count > 0) message += "\n\n" + string.Join("\n", errors);
+                MessageBox.Show(message, "Экспорт", MessageBoxButtons.OK, errors.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
             }
         }
 
-        /// <summary>
-        /// Экспортирует все таблицы из базы данных в CSV-файлы.
-        /// Каждая таблица сохраняется в отдельный файл с именем <имя_таблицы>.csv.
-        /// </summary>
-        private void ExportAllTablesToCsv(string folderPath)
-        {
-            var tables = dbHelper.GetTableList();
-            int success = 0;
-            int failed = 0;
-            var errors = new List<string>();
-
-            foreach (string table in tables)
-            {
-                try
-                {
-                    string filePath = Path.Combine(folderPath, table + ".csv");
-                    ExportTableToCsv(table, filePath);
-                    success++;
-                }
-                catch (Exception ex)
-                {
-                    failed++;
-                    errors.Add($"Ошибка экспорта таблицы {table}: {ex.Message}");
-                }
-            }
-
-            string message = $"Экспорт завершен.\nУспешно экспортировано таблиц: {success}\nОшибок: {failed}";
-            if (errors.Count > 0)
-            {
-                message += "\n\nДетали ошибок:\n" + string.Join("\n", errors);
-            }
-            MessageBox.Show(message, "Результат экспорта", MessageBoxButtons.OK, errors.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
-        }
-
-        /// <summary>
-        /// Экспортирует одну таблицу в CSV-файл.
-        /// </summary>
         private void ExportTableToCsv(string tableName, string filePath)
         {
             using (var conn = dbHelper.GetConnection())
@@ -144,35 +463,23 @@ namespace Smirnov_kursovaya.secondForm
                 {
                     DataTable dt = new DataTable();
                     adapter.Fill(dt);
-
                     using (StreamWriter sw = new StreamWriter(filePath, false, Encoding.UTF8))
                     {
-                        // Запись заголовков столбцов
                         for (int i = 0; i < dt.Columns.Count; i++)
                         {
                             sw.Write(dt.Columns[i].ColumnName);
-                            if (i < dt.Columns.Count - 1)
-                                sw.Write(";");
+                            if (i < dt.Columns.Count - 1) sw.Write(";");
                         }
                         sw.WriteLine();
-
-                        // Запись строк данных
                         foreach (DataRow row in dt.Rows)
                         {
                             for (int i = 0; i < dt.Columns.Count; i++)
                             {
-                                object value = row[i];
-                                string strValue = value == DBNull.Value ? "" : value.ToString();
-
-                                // Экранирование, если значение содержит разделитель или кавычки
-                                if (strValue.Contains(";") || strValue.Contains("\"") || strValue.Contains("\n"))
-                                {
-                                    strValue = "\"" + strValue.Replace("\"", "\"\"") + "\"";
-                                }
-
-                                sw.Write(strValue);
-                                if (i < dt.Columns.Count - 1)
-                                    sw.Write(";");
+                                string val = row[i] == DBNull.Value ? "" : row[i].ToString();
+                                if (val.Contains(";") || val.Contains("\"") || val.Contains("\n"))
+                                    val = "\"" + val.Replace("\"", "\"\"") + "\"";
+                                sw.Write(val);
+                                if (i < dt.Columns.Count - 1) sw.Write(";");
                             }
                             sw.WriteLine();
                         }
@@ -181,533 +488,173 @@ namespace Smirnov_kursovaya.secondForm
             }
         }
 
-        private void SetPlaceholderText(TextBox textBox, string placeholder)
+        // ===== Импорт CSV =====
+        private void btnImport_Click(object sender, EventArgs e)
         {
-            if (string.IsNullOrEmpty(textBox.Text))
+            using (var ofd = new OpenFileDialog { Filter = "CSV files (*.csv)|*.csv", Title = "Выберите CSV-файл" })
             {
-                textBox.Text = placeholder;
-                textBox.ForeColor = Color.Gray;
-            }
+                if (ofd.ShowDialog() != DialogResult.OK) return;
 
-            textBox.Enter += (s, e) => {
-                if (textBox.Text == placeholder)
+                // Определяем таблицу по имени файла
+                string fileName = Path.GetFileNameWithoutExtension(ofd.FileName).ToLower();
+                string tableName = null;
+                if (fileName.Contains("categor")) tableName = "categories";
+                else if (fileName.Contains("status")) tableName = "statuses";
+                else
                 {
-                    textBox.Text = "";
-                    textBox.ForeColor = Color.Black;
+                    // Спросить пользователя
+                    Form prompt = new Form { Width = 320, Height = 150, Text = "Выберите таблицу", StartPosition = FormStartPosition.CenterScreen, FormBorderStyle = FormBorderStyle.FixedDialog };
+                    ComboBox cb = new ComboBox { Left = 20, Top = 20, Width = 270, DropDownStyle = ComboBoxStyle.DropDownList };
+                    cb.Items.AddRange(new object[] { "categories", "statuses" });
+                    cb.SelectedIndex = 0;
+                    Button ok = new Button { Text = "OK", Left = 210, Top = 60, Width = 80, DialogResult = DialogResult.OK };
+                    prompt.Controls.AddRange(new Control[] { cb, ok });
+                    prompt.AcceptButton = ok;
+                    if (prompt.ShowDialog() != DialogResult.OK) return;
+                    tableName = cb.SelectedItem.ToString();
                 }
-            };
 
-            textBox.Leave += (s, e) => {
-                if (string.IsNullOrWhiteSpace(textBox.Text))
-                {
-                    textBox.Text = placeholder;
-                    textBox.ForeColor = Color.Gray;
-                }
-            };
-        }
-
-        private void ApplyCoralButtonStyle()
-        {
-            Color coralColor = Color.FromArgb(255, 127, 80); // Coral цвет
-            Color coralLightColor = Color.FromArgb(255, 147, 100); // Светлее для hover
-            Color coralDarkColor = Color.FromArgb(235, 107, 60); // Темнее для нажатия
-
-            // Рекурсивно применяем стиль ко всем кнопкам
-            ApplyStyleToAllButtons(this, coralColor, coralLightColor, coralDarkColor);
-
-            // Особый стиль для кнопки меню (красная)
-            if (menuButton != null)
-            {
-                ApplyMenuButtonStyle();
-            }
-        }
-
-        private void ApplyStyleToAllButtons(Control parent, Color normalColor, Color hoverColor, Color pressedColor)
-        {
-            foreach (Control control in parent.Controls)
-            {
-                // Если это кнопка и не кнопка меню - применяем стиль
-                if (control is Button button && button != menuButton)
-                {
-                    ApplyButtonStyle(button, normalColor, hoverColor, pressedColor);
-                }
-                // Если это контейнер - рекурсивно обрабатываем его содержимое
-                else if (control.HasChildren)
-                {
-                    ApplyStyleToAllButtons(control, normalColor, hoverColor, pressedColor);
-                }
-            }
-        }
-
-        private void ApplyButtonStyle(Button button, Color normalColor, Color hoverColor, Color pressedColor)
-        {
-            button.BackColor = normalColor;
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderColor = Color.FromArgb(235, 107, 60);
-            button.FlatAppearance.BorderSize = 1;
-            button.ForeColor = Color.Black;
-            button.Font = new Font(button.Font, FontStyle.Regular);
-
-            // Убираем старые обработчики
-            button.MouseEnter -= (s, e) => { };
-            button.MouseLeave -= (s, e) => { };
-            button.MouseDown -= (s, e) => { };
-            button.MouseUp -= (s, e) => { };
-
-            // Добавляем новые обработчики
-            button.MouseEnter += (s, e) => {
-                button.BackColor = hoverColor;
-            };
-            button.MouseLeave += (s, e) => {
-                button.BackColor = normalColor;
-            };
-            button.MouseDown += (s, e) => {
-                button.BackColor = pressedColor;
-            };
-            button.MouseUp += (s, e) => {
-                button.BackColor = hoverColor;
-            };
-        }
-
-        private void ApplyMenuButtonStyle()
-        {
-            menuButton.BackColor = Color.Red;
-            menuButton.FlatStyle = FlatStyle.Flat;
-            menuButton.FlatAppearance.BorderColor = Color.DarkRed;
-            menuButton.FlatAppearance.BorderSize = 1;
-            menuButton.ForeColor = Color.Black;
-            menuButton.Font = new Font(menuButton.Font, FontStyle.Regular);
-
-            // Убираем старые обработчики и добавляем новые
-            menuButton.MouseEnter -= (s, e) => { };
-            menuButton.MouseLeave -= (s, e) => { };
-            menuButton.MouseDown -= (s, e) => { };
-            menuButton.MouseUp -= (s, e) => { };
-
-            menuButton.MouseEnter += (s, e) => {
-                menuButton.BackColor = Color.IndianRed;
-            };
-            menuButton.MouseLeave += (s, e) => {
-                menuButton.BackColor = Color.Red;
-            };
-            menuButton.MouseDown += (s, e) => {
-                menuButton.BackColor = Color.OrangeRed;
-            };
-            menuButton.MouseUp += (s, e) => {
-                menuButton.BackColor = Color.OrangeRed;
-            };
-        }
-
-        private void ReferencesForm_Load(object sender, EventArgs e)
-        {
-            LoadTablesToList();
-        }
-
-        private void LoadReferenceTables()
-        {
-            LoadCategories();
-            LoadStatuses();
-            LoadRoles();
-        }
-
-        private void LoadTablesToList()
-        {
-            try
-            {
-                using (var connection = dbHelper.GetConnection())
-                {
-                    connection.Open();
-                    string query = "SHOW TABLES";
-                    using (var command = new MySqlCommand(query, connection))
-                    using (var reader = command.ExecuteReader())
-                    {
-                        tablesListBox.Items.Clear();
-                        while (reader.Read())
-                        {
-                            tablesListBox.Items.Add(reader[0].ToString());
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка загрузки таблиц: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void LoadCategories()
-        {
-            try
-            {
-                using (var connection = dbHelper.GetConnection())
-                {
-                    connection.Open();
-                    string query = "SELECT id, name, description FROM categories ORDER BY name";
-                    using (var command = new MySqlCommand(query, connection))
-                    using (var adapter = new MySqlDataAdapter(command))
-                    {
-                        DataTable dt = new DataTable();
-                        adapter.Fill(dt);
-                        categoriesDataGridView.DataSource = dt;
-
-                        if (categoriesDataGridView.Columns.Count > 0)
-                        {
-                            categoriesDataGridView.Columns["id"].HeaderText = "ID";
-                            categoriesDataGridView.Columns["name"].HeaderText = "Название";
-                            categoriesDataGridView.Columns["description"].HeaderText = "Описание";
-                            categoriesDataGridView.RowHeadersVisible = false;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка загрузки категорий: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void LoadStatuses()
-        {
-            try
-            {
-                using (var connection = dbHelper.GetConnection())
-                {
-                    connection.Open();
-                    string query = "SELECT id, name, description FROM statuses ORDER BY name";
-                    using (var command = new MySqlCommand(query, connection))
-                    using (var adapter = new MySqlDataAdapter(command))
-                    {
-                        DataTable dt = new DataTable();
-                        adapter.Fill(dt);
-                        statusesDataGridView.DataSource = dt;
-
-                        if (statusesDataGridView.Columns.Count > 0)
-                        {
-                            statusesDataGridView.Columns["id"].HeaderText = "ID";
-                            statusesDataGridView.Columns["name"].HeaderText = "Название";
-                            statusesDataGridView.Columns["description"].HeaderText = "Описание";
-                            statusesDataGridView.RowHeadersVisible = false;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка загрузки статусов: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void LoadRoles()
-        {
-            try
-            {
-                using (var connection = dbHelper.GetConnection())
-                {
-                    connection.Open();
-                    string query = "SELECT id, name, description FROM roles ORDER BY name";
-                    using (var command = new MySqlCommand(query, connection))
-                    using (var adapter = new MySqlDataAdapter(command))
-                    {
-                        DataTable dt = new DataTable();
-                        adapter.Fill(dt);
-                        rolesDataGridView.DataSource = dt;
-
-                        if (rolesDataGridView.Columns.Count > 0)
-                        {
-                            rolesDataGridView.Columns["id"].HeaderText = "ID";
-                            rolesDataGridView.Columns["name"].HeaderText = "Название";
-                            rolesDataGridView.Columns["description"].HeaderText = "Описание";
-                            rolesDataGridView.RowHeadersVisible = false;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка загрузки ролей: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void addCategoryButton_Click(object sender, EventArgs e)
-        {
-            AddReferenceItem("категорию", "categories", categoryNameTextBox, categoryDescTextBox, LoadCategories);
-        }
-
-        private void editCategoryButton_Click(object sender, EventArgs e)
-        {
-            EditReferenceItem(categoriesDataGridView, "категорию", "categories", categoryNameTextBox, categoryDescTextBox, LoadCategories);
-        }
-
-        private void deleteCategoryButton_Click(object sender, EventArgs e)
-        {
-            DeleteReferenceItem(categoriesDataGridView, "категорию", "categories", LoadCategories);
-        }
-
-        private void addStatusButton_Click(object sender, EventArgs e)
-        {
-            AddReferenceItem("статус", "statuses", statusNameTextBox, statusDescTextBox, LoadStatuses);
-        }
-
-        private void editStatusButton_Click(object sender, EventArgs e)
-        {
-            EditReferenceItem(statusesDataGridView, "статус", "statuses", statusNameTextBox, statusDescTextBox, LoadStatuses);
-        }
-
-        private void deleteStatusButton_Click(object sender, EventArgs e)
-        {
-            DeleteReferenceItem(statusesDataGridView, "статус", "statuses", LoadStatuses);
-        }
-
-        private void addRoleButton_Click(object sender, EventArgs e)
-        {
-            AddReferenceItem("роль", "roles", roleNameTextBox, roleDescTextBox, LoadRoles);
-        }
-
-        private void editRoleButton_Click(object sender, EventArgs e)
-        {
-            EditReferenceItem(rolesDataGridView, "роль", "roles", roleNameTextBox, roleDescTextBox, LoadRoles);
-        }
-
-        private void deleteRoleButton_Click(object sender, EventArgs e)
-        {
-            DeleteReferenceItem(rolesDataGridView, "роль", "roles", LoadRoles);
-        }
-
-        private void AddReferenceItem(string itemType, string tableName, TextBox nameTextBox, TextBox descTextBox, Action loadMethod)
-        {
-            string name = nameTextBox.Text == "Название " + itemType ? "" : nameTextBox.Text;
-            string description = descTextBox.Text == "Описание " + itemType ? "" : descTextBox.Text;
-
-            if (string.IsNullOrEmpty(name))
-            {
-                MessageBox.Show($"Введите название {itemType}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            try
-            {
-                using (var connection = dbHelper.GetConnection())
-                {
-                    connection.Open();
-
-                    // Проверка на уникальность
-                    string checkQuery = $"SELECT COUNT(*) FROM {tableName} WHERE name = @name";
-                    using (var checkCommand = new MySqlCommand(checkQuery, connection))
-                    {
-                        checkCommand.Parameters.AddWithValue("@name", name);
-                        int count = Convert.ToInt32(checkCommand.ExecuteScalar());
-
-                        if (count > 0)
-                        {
-                            MessageBox.Show($"Такое название уже существует", "Ошибка",
-                                MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            return;
-                        }
-                    }
-
-                    string query = $"INSERT INTO {tableName} (name, description) VALUES (@name, @description)";
-                    using (var command = new MySqlCommand(query, connection))
-                    {
-                        command.Parameters.AddWithValue("@name", name);
-                        command.Parameters.AddWithValue("@description", description);
-                        command.ExecuteNonQuery();
-                        MessageBox.Show($"Запись добавлена", "Успех",
-                            MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                        nameTextBox.Text = "Название " + itemType;
-                        nameTextBox.ForeColor = Color.Gray;
-                        descTextBox.Text = "Описание " + itemType;
-                        descTextBox.ForeColor = Color.Gray;
-                        loadMethod();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка добавления {itemType}: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void EditReferenceItem(DataGridView grid, string itemType, string tableName, TextBox nameTextBox, TextBox descTextBox, Action loadMethod)
-        {
-            if (grid.SelectedRows.Count == 0)
-            {
-                MessageBox.Show($"Выберите запись для редактирования", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            int id = Convert.ToInt32(grid.SelectedRows[0].Cells["id"].Value);
-            string oldName = grid.SelectedRows[0].Cells["name"].Value.ToString();
-
-            // Проверка основных справочников
-            if (IsSystemReference(tableName, id))
-            {
-                MessageBox.Show($"Нельзя редактировать системную запись", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            string name = nameTextBox.Text == "Название " + itemType ? "" : nameTextBox.Text;
-            string description = descTextBox.Text == "Описание " + itemType ? "" : descTextBox.Text;
-
-            if (string.IsNullOrEmpty(name))
-            {
-                MessageBox.Show($"Введите новое название записи", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            try
-            {
-                using (var connection = dbHelper.GetConnection())
-                {
-                    connection.Open();
-
-                    string checkQuery = $"SELECT COUNT(*) FROM {tableName} WHERE name = @name AND id != @id";
-                    using (var checkCommand = new MySqlCommand(checkQuery, connection))
-                    {
-                        checkCommand.Parameters.AddWithValue("@name", name);
-                        checkCommand.Parameters.AddWithValue("@id", id);
-                        int count = Convert.ToInt32(checkCommand.ExecuteScalar());
-
-                        if (count > 0)
-                        {
-                            MessageBox.Show($"Такое название уже существует", "Ошибка",
-                                MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            return;
-                        }
-                    }
-
-                    string query = $"UPDATE {tableName} SET name = @name, description = @description WHERE id = @id";
-                    using (var command = new MySqlCommand(query, connection))
-                    {
-                        command.Parameters.AddWithValue("@name", name);
-                        command.Parameters.AddWithValue("@description", description);
-                        command.Parameters.AddWithValue("@id", id);
-                        command.ExecuteNonQuery();
-                        MessageBox.Show($"Запись обновлена", "Успех",
-                            MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                        nameTextBox.Text = "Название " + itemType;
-                        nameTextBox.ForeColor = Color.Gray;
-                        descTextBox.Text = "Описание " + itemType;
-                        descTextBox.ForeColor = Color.Gray;
-                        loadMethod();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка редактирования записи: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private void DeleteReferenceItem(DataGridView grid, string itemType, string tableName, Action loadMethod)
-        {
-            if (grid.SelectedRows.Count == 0)
-            {
-                MessageBox.Show($"Выберите таблицу для удаления", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            int id = Convert.ToInt32(grid.SelectedRows[0].Cells["id"].Value);
-            string name = grid.SelectedRows[0].Cells["name"].Value.ToString();
-
-            // Проверка основных справочников
-            if (IsSystemReference(tableName, id))
-            {
-                MessageBox.Show($"Нельзя удалять системную запись", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            if (MessageBox.Show($"Вы уверены, что хотите удалить запись \"{name}\"?", "Подтверждение",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-            {
                 try
                 {
-                    using (var connection = dbHelper.GetConnection())
-                    {
-                        connection.Open();
-                        string query = $"DELETE FROM {tableName} WHERE id = @id";
-                        using (var command = new MySqlCommand(query, connection))
-                        {
-                            command.Parameters.AddWithValue("@id", id);
-                            command.ExecuteNonQuery();
-                            MessageBox.Show($"Запись удалена", "Успех",
-                                MessageBoxButtons.OK, MessageBoxIcon.Information);
-                            loadMethod();
-                        }
-                    }
+                    int imported = ImportCsvToTable(tableName, ofd.FileName);
+                    MessageBox.Show($"Импорт завершён. Добавлено записей: {imported}", "Импорт", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    LoadReferenceTables();
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Ошибка удаления записи: {ex.Message}", "Ошибка",
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show($"Ошибка импорта: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
         }
 
-        private bool IsSystemReference(string tableName, int id)
+        private int ImportCsvToTable(string tableName, string filePath)
         {
-            // Проверка системных справочников
-            try
+            int count = 0;
+            string[] lines = File.ReadAllLines(filePath, Encoding.UTF8);
+            if (lines.Length < 2) return 0;
+            string[] headers = lines[0].Split(';');
+
+            using (var conn = dbHelper.GetConnection())
             {
-                using (var connection = dbHelper.GetConnection())
+                conn.Open();
+                for (int i = 1; i < lines.Length; i++)
                 {
-                    connection.Open();
+                    if (string.IsNullOrWhiteSpace(lines[i])) continue;
+                    string[] values = lines[i].Split(';');
+                    int nameIdx = -1;
+                    for (int h = 0; h < headers.Length; h++)
+                        if (headers[h].Trim().ToLower() == "name") { nameIdx = h; break; }
+                    if (nameIdx < 0 || nameIdx >= values.Length) continue;
+                    string name = values[nameIdx].Trim().Trim('"');
+                    if (string.IsNullOrEmpty(name)) continue;
 
-                    if (tableName == "roles")
+                    string check = $"SELECT COUNT(*) FROM {tableName} WHERE name = @name";
+                    using (var cmd = new MySqlCommand(check, conn))
                     {
-                        string query = "SELECT name FROM roles WHERE id = @id";
-                        using (var command = new MySqlCommand(query, connection))
-                        {
-                            command.Parameters.AddWithValue("@id", id);
-                            var name = command.ExecuteScalar()?.ToString();
-
-                            // Системные роли, которые нельзя удалять/редактировать
-                            string[] systemRoles = { "Системный администратор", "Менеджер", "Продавец-консультант" };
-                            return Array.Exists(systemRoles, role => role == name);
-                        }
+                        cmd.Parameters.AddWithValue("@name", name);
+                        if (Convert.ToInt32(cmd.ExecuteScalar()) > 0) continue;
                     }
-                    else if (tableName == "statuses")
+                    string query = $"INSERT INTO {tableName} (name) VALUES (@name)";
+                    using (var cmd = new MySqlCommand(query, conn))
                     {
-                        string query = "SELECT name FROM statuses WHERE id = @id";
-                        using (var command = new MySqlCommand(query, connection))
-                        {
-                            command.Parameters.AddWithValue("@id", id);
-                            var name = command.ExecuteScalar()?.ToString();
-
-                            // Системные статусы, которые нельзя удалять/редактировать
-                            string[] systemStatuses = { "Новый", "В обработке", "Выполнен", "Отменен" };
-                            return Array.Exists(systemStatuses, status => status == name);
-                        }
+                        cmd.Parameters.AddWithValue("@name", name);
+                        cmd.ExecuteNonQuery();
+                        count++;
                     }
                 }
             }
-            catch { }
-
-            return false;
+            return count;
         }
+
+        // ===== Резервное копирование =====
+        private void btnBackup_Click(object sender, EventArgs e)
+        {
+            if (!IsCurrentUserAdmin())
+            {
+                MessageBox.Show("Резервное копирование доступно только системному администратору",
+                    "Ошибка доступа", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            using (var sfd = new SaveFileDialog { Filter = "SQL files (*.sql)|*.sql", FileName = $"backup_{DateTime.Now:yyyyMMdd_HHmmss}.sql", Title = "Сохранить резервную копию" })
+            {
+                if (sfd.ShowDialog() != DialogResult.OK) return;
+                try
+                {
+                    string backup = CreateDatabaseBackup();
+                    File.WriteAllText(sfd.FileName, backup, Encoding.UTF8);
+                    MessageBox.Show("Резервная копия успешно создана", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ошибка создания резервной копии: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        // ===== Восстановление БД =====
+        private void btnRestore_Click(object sender, EventArgs e)
+        {
+            if (!IsCurrentUserAdmin())
+            {
+                MessageBox.Show("Восстановление БД доступно только системному администратору",
+                    "Ошибка доступа", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            using (var ofd = new OpenFileDialog { Filter = "SQL files (*.sql)|*.sql", Title = "Выберите файл резервной копии" })
+            {
+                if (ofd.ShowDialog() != DialogResult.OK) return;
+
+                if (MessageBox.Show("Внимание! Это действие заменит текущие данные. Продолжить?", "Подтверждение",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
+                try
+                {
+                    string script = File.ReadAllText(ofd.FileName, Encoding.UTF8);
+                    dbHelper.ExecuteScript(script);
+                    MessageBox.Show("База данных успешно восстановлена", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    LoadReferenceTables();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ошибка восстановления: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        // ===== Выбор панели =====
+        private void ShowPanel(string panelName)
+        {
+            categoriesPanel.Visible = false;
+            statusesPanel.Visible = false;
+            categoriesButton.BackColor = Color.FromArgb(255, 127, 80);
+            statusesButton.BackColor = Color.FromArgb(255, 127, 80);
+
+            switch (panelName)
+            {
+                case "categories":
+                    categoriesPanel.Visible = true;
+                    categoriesButton.BackColor = Color.FromArgb(220, 220, 220);
+                    break;
+                case "statuses":
+                    statusesPanel.Visible = true;
+                    statusesButton.BackColor = Color.FromArgb(220, 220, 220);
+                    break;
+            }
+
+            // Гарантируем, что панель действий не закрыта вкладочными панелями.
+            if (bottomActionsPanel != null) bottomActionsPanel.BringToFront();
+            if (panel1 != null) panel1.BringToFront();
+        }
+
+        private void categoriesButton_Click(object sender, EventArgs e) => ShowPanel("categories");
+        private void statusesButton_Click(object sender, EventArgs e) => ShowPanel("statuses");
+        private void menuButton_Click(object sender, EventArgs e) => this.Close();
 
         private void categoriesDataGridView_SelectionChanged(object sender, EventArgs e)
         {
             if (categoriesDataGridView.SelectedRows.Count > 0)
             {
-                DataGridViewRow selectedRow = categoriesDataGridView.SelectedRows[0];
-                categoryNameTextBox.Text = selectedRow.Cells["name"].Value.ToString();
+                categoryNameTextBox.Text = categoriesDataGridView.SelectedRows[0].Cells["name"].Value.ToString();
                 categoryNameTextBox.ForeColor = Color.Black;
-                categoryDescTextBox.Text = selectedRow.Cells["description"].Value.ToString();
-                categoryDescTextBox.ForeColor = Color.Black;
             }
         }
 
@@ -715,249 +662,85 @@ namespace Smirnov_kursovaya.secondForm
         {
             if (statusesDataGridView.SelectedRows.Count > 0)
             {
-                DataGridViewRow selectedRow = statusesDataGridView.SelectedRows[0];
-                statusNameTextBox.Text = selectedRow.Cells["name"].Value.ToString();
+                statusNameTextBox.Text = statusesDataGridView.SelectedRows[0].Cells["name"].Value.ToString();
                 statusNameTextBox.ForeColor = Color.Black;
-                statusDescTextBox.Text = selectedRow.Cells["description"].Value.ToString();
-                statusDescTextBox.ForeColor = Color.Black;
             }
         }
 
-        private void rolesDataGridView_SelectionChanged(object sender, EventArgs e)
+        // Создание резервной копии текущей БД средствами SQL: SHOW CREATE TABLE + INSERT'ы по всем таблицам.
+        private string CreateDatabaseBackup()
         {
-            if (rolesDataGridView.SelectedRows.Count > 0)
+            var sb = new StringBuilder();
+            using (var conn = dbHelper.GetConnection())
             {
-                DataGridViewRow selectedRow = rolesDataGridView.SelectedRows[0];
-                roleNameTextBox.Text = selectedRow.Cells["name"].Value.ToString();
-                roleNameTextBox.ForeColor = Color.Black;
-                roleDescTextBox.Text = selectedRow.Cells["description"].Value.ToString();
-                roleDescTextBox.ForeColor = Color.Black;
-            }
-        }
+                conn.Open();
+                string dbName = conn.Database;
 
-        private void createTableButton_Click(object sender, EventArgs e)
-        {
-            string tableName = newTableNameTextBox.Text == "Имя новой таблицы" ? "" : newTableNameTextBox.Text;
+                sb.AppendLine($"-- Backup database: {dbName}");
+                sb.AppendLine($"-- Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                sb.AppendLine("SET FOREIGN_KEY_CHECKS=0;");
+                sb.AppendLine();
 
-            if (string.IsNullOrEmpty(tableName))
-            {
-                MessageBox.Show("Введите название таблицы", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            try
-            {
-                using (var connection = dbHelper.GetConnection())
+                var tables = new List<string>();
+                using (var cmd = new MySqlCommand("SHOW TABLES", conn))
+                using (var reader = cmd.ExecuteReader())
                 {
-                    connection.Open();
-                    string query = $"CREATE TABLE {tableName} (" +
-                                  "id INT AUTO_INCREMENT PRIMARY KEY, " +
-                                  "name VARCHAR(255) NOT NULL, " +
-                                  "description TEXT, " +
-                                  "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
-
-                    using (var command = new MySqlCommand(query, connection))
-                    {
-                        command.ExecuteNonQuery();
-                        MessageBox.Show($"Таблица {tableName} создана", "Успех",
-                            MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        newTableNameTextBox.Text = "Имя новой таблицы";
-                        newTableNameTextBox.ForeColor = Color.Gray;
-                        LoadTablesToList();
-                    }
+                    while (reader.Read()) tables.Add(reader.GetString(0));
                 }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка создания таблицы: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
 
-        private void tablesListBox_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (tablesListBox.SelectedItem != null)
-            {
-                currentTable = tablesListBox.SelectedItem.ToString();
-                LoadTableData(currentTable);
-            }
-        }
-
-        private void LoadTableData(string tableName)
-        {
-            try
-            {
-                using (var connection = dbHelper.GetConnection())
+                foreach (var table in tables)
                 {
-                    connection.Open();
-                    string query = $"SELECT * FROM {tableName}";
-                    using (var command = new MySqlCommand(query, connection))
-                    using (var adapter = new MySqlDataAdapter(command))
+                    sb.AppendLine($"-- ----- Table: {table} -----");
+                    sb.AppendLine($"DROP TABLE IF EXISTS `{table}`;");
+
+                    string createSql = "";
+                    using (var cmd = new MySqlCommand($"SHOW CREATE TABLE `{table}`", conn))
+                    using (var reader = cmd.ExecuteReader())
                     {
-                        DataTable dt = new DataTable();
-                        adapter.Fill(dt);
-                        customTableDataGridView.DataSource = dt;
-                        customTableDataGridView.RowHeadersVisible = false;
+                        if (reader.Read()) createSql = reader.GetString(1);
                     }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка загрузки данных таблицы: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
+                    sb.AppendLine(createSql + ";");
+                    sb.AppendLine();
 
-        private void addToCustomTableButton_Click(object sender, EventArgs e)
-        {
-            if (string.IsNullOrEmpty(currentTable))
-            {
-                MessageBox.Show("Выберите таблицу", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            string name = customNameTextBox.Text == "Название записи" ? "" : customNameTextBox.Text;
-            string description = customDescTextBox.Text == "Описание записи" ? "" : customDescTextBox.Text;
-
-            if (string.IsNullOrEmpty(name))
-            {
-                MessageBox.Show("Введите название", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            try
-            {
-                using (var connection = dbHelper.GetConnection())
-                {
-                    connection.Open();
-                    string query = $"INSERT INTO {currentTable} (name, description) VALUES (@name, @description)";
-                    using (var command = new MySqlCommand(query, connection))
+                    using (var cmd = new MySqlCommand($"SELECT * FROM `{table}`", conn))
+                    using (var reader = cmd.ExecuteReader())
                     {
-                        command.Parameters.AddWithValue("@name", name);
-                        command.Parameters.AddWithValue("@description", description);
-                        command.ExecuteNonQuery();
-                        MessageBox.Show("Запись добавлена", "Успех",
-                            MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        customNameTextBox.Text = "Название записи";
-                        customNameTextBox.ForeColor = Color.Gray;
-                        customDescTextBox.Text = "Описание записи";
-                        customDescTextBox.ForeColor = Color.Gray;
-                        LoadTableData(currentTable);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка добавления записи: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
+                        if (!reader.HasRows) { sb.AppendLine(); continue; }
 
-        private void deleteFromCustomTableButton_Click(object sender, EventArgs e)
-        {
-            if (customTableDataGridView.SelectedRows.Count == 0)
-            {
-                MessageBox.Show("Выберите запись для удаления", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
+                        var cols = new List<string>();
+                        for (int i = 0; i < reader.FieldCount; i++) cols.Add($"`{reader.GetName(i)}`");
+                        string colList = string.Join(",", cols);
 
-            int id = Convert.ToInt32(customTableDataGridView.SelectedRows[0].Cells["id"].Value);
-            string name = customTableDataGridView.SelectedRows[0].Cells["name"].Value.ToString();
-
-            if (MessageBox.Show($"Вы уверены, что хотите удалить запись \"{name}\"?", "Подтверждение",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-            {
-                try
-                {
-                    using (var connection = dbHelper.GetConnection())
-                    {
-                        connection.Open();
-                        string query = $"DELETE FROM {currentTable} WHERE id = @id";
-                        using (var command = new MySqlCommand(query, connection))
+                        while (reader.Read())
                         {
-                            command.Parameters.AddWithValue("@id", id);
-                            command.ExecuteNonQuery();
-                            MessageBox.Show("Запись удалена", "Успех",
-                                MessageBoxButtons.OK, MessageBoxIcon.Information);
-                            LoadTableData(currentTable);
+                            var values = new List<string>();
+                            for (int i = 0; i < reader.FieldCount; i++)
+                            {
+                                if (reader.IsDBNull(i)) values.Add("NULL");
+                                else
+                                {
+                                    object v = reader.GetValue(i);
+                                    if (v is byte[] bytes)
+                                        values.Add("0x" + BitConverter.ToString(bytes).Replace("-", ""));
+                                    else if (v is DateTime dt)
+                                        values.Add($"'{dt:yyyy-MM-dd HH:mm:ss}'");
+                                    else if (v is bool b)
+                                        values.Add(b ? "1" : "0");
+                                    else if (v is int || v is long || v is short || v is decimal || v is double || v is float)
+                                        values.Add(Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture));
+                                    else
+                                        values.Add("'" + v.ToString().Replace("\\", "\\\\").Replace("'", "''") + "'");
+                                }
+                            }
+                            sb.AppendLine($"INSERT INTO `{table}` ({colList}) VALUES ({string.Join(",", values)});");
                         }
                     }
+                    sb.AppendLine();
                 }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Ошибка удаления записи: {ex.Message}", "Ошибка",
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+
+                sb.AppendLine("SET FOREIGN_KEY_CHECKS=1;");
             }
-        }
-
-        private void ShowPanel(string panelName)
-        {
-            // Скрыть все панели
-            categoriesPanel.Visible = false;
-            statusesPanel.Visible = false;
-            rolesPanel.Visible = false;
-            customTablesPanel.Visible = false;
-
-            // Сбросить выделение всех кнопок
-            categoriesButton.BackColor = Color.FromArgb(255, 127, 80);
-            statusesButton.BackColor = Color.FromArgb(255, 127, 80);
-            rolesButton.BackColor = Color.FromArgb(255, 127, 80);
-            customTablesButton.BackColor = Color.FromArgb(255, 127, 80);
-
-            // Показать нужную панель
-            switch (panelName)
-            {
-                case "categories":
-                    categoriesPanel.Visible = true;
-                    categoriesButton.BackColor = Color.FromArgb(220, 220, 220); // Серый для активной
-                    currentPanel = categoriesPanel;
-                    break;
-                case "statuses":
-                    statusesPanel.Visible = true;
-                    statusesButton.BackColor = Color.FromArgb(220, 220, 220); // Серый для активной
-                    currentPanel = statusesPanel;
-                    break;
-                case "roles":
-                    rolesPanel.Visible = true;
-                    rolesButton.BackColor = Color.FromArgb(220, 220, 220); // Серый для активной
-                    currentPanel = rolesPanel;
-                    break;
-                case "custom":
-                    customTablesPanel.Visible = true;
-                    customTablesButton.BackColor = Color.FromArgb(220, 220, 220); // Серый для активной
-                    currentPanel = customTablesPanel;
-                    break;
-            }
-        }
-
-        private void categoriesButton_Click(object sender, EventArgs e)
-        {
-            ShowPanel("categories");
-        }
-
-        private void statusesButton_Click(object sender, EventArgs e)
-        {
-            ShowPanel("statuses");
-        }
-
-        private void rolesButton_Click(object sender, EventArgs e)
-        {
-            ShowPanel("roles");
-        }
-
-        private void customTablesButton_Click(object sender, EventArgs e)
-        {
-            ShowPanel("custom");
-        }
-
-        private void menuButton_Click(object sender, EventArgs e)
-        {
-            this.Close();
+            return sb.ToString();
         }
     }
 }

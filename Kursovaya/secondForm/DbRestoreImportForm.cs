@@ -21,6 +21,13 @@ namespace Smirnov_kursovaya.secondForm
             dbHelper = new DatabaseHelper();
             LoadTableList();
             ApplyCoralButtonStyle();
+            SetupResponsiveLayout();
+        }
+
+        private void SetupResponsiveLayout()
+        {
+            this.MinimumSize = new Size(700, 500);
+            this.WindowState = FormWindowState.Maximized;
         }
 
         private void ApplyCoralButtonStyle()

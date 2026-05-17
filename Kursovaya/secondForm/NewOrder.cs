@@ -2,24 +2,31 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
 using Smirnov_kursovaya.Database;
-using Smirnov_kursovaya.Helpers;
-using Smirnov_kursovaya.Models;
 
 namespace Smirnov_kursovaya.secondForm
 {
     public partial class NewOrderForm : Form
     {
         private DatabaseHelper dbHelper;
-        private List<OrderItem> cartItems; // ИСПРАВЛЕНО: указан тип
+        private List<OrderItem> cartItems;
         private decimal subtotal = 0;
         private decimal discountPercent = 0;
-        private DataTable clientsData;
+        private decimal discountAmount = 0;
+        private string orderNumber = "";
 
-        // Класс для хранения элементов корзины
+        // Выбранный клиент. Заполняется только из формы «Клиенты» (режим выбора).
+        private int selectedClientId = 0;
+        private string selectedClientName = "";
+        private string selectedClientPhone = "";
+
+        private readonly string imagesFolderPath;
+        private readonly string imagesResourceFolder;
+
         public class OrderItem
         {
             public int ProductId { get; set; }
@@ -29,86 +36,81 @@ namespace Smirnov_kursovaya.secondForm
             public decimal Total { get; set; }
         }
 
-        // Класс для элемента ComboBox
-        private class ClientItem
-        {
-            public int Id { get; set; }
-            public string Display { get; set; }
-
-            public override string ToString()
-            {
-                return Display;
-            }
-        }
-
         public NewOrderForm()
         {
             InitializeComponent();
+
+            string appDataPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Smirnov_kursovaya"
+            );
+            imagesFolderPath = Path.Combine(appDataPath, "ProductImages");
+            if (!Directory.Exists(imagesFolderPath))
+                Directory.CreateDirectory(imagesFolderPath);
+
+            imagesResourceFolder = Path.Combine(Application.StartupPath, "Resources");
+            if (!Directory.Exists(imagesResourceFolder))
+            {
+                string devPath = Path.GetFullPath(Path.Combine(Application.StartupPath, @"..\..\Resources"));
+                if (Directory.Exists(devPath))
+                    imagesResourceFolder = devPath;
+            }
+
             dbHelper = new DatabaseHelper();
-            cartItems = new List<OrderItem>(); // ИСПРАВЛЕНО: указан тип
+            cartItems = new List<OrderItem>();
+            EnsureOrderDateTimeColumn();
             InitializeControls();
-            LoadData();
+            LoadProducts();
         }
 
         private void InitializeControls()
         {
-            // Настройка DataGridView для товаров с изображениями
             SetupProductsDataGridView();
-
-            // Настройка DataGridView для корзины
             SetupCartDataGridView();
 
-            // Настройка дат
             orderDateLabel.Text = DateTime.Now.ToString("dd.MM.yyyy HH:mm");
             completionDatePicker.Value = DateTime.Now.AddDays(1);
             completionDatePicker.MinDate = DateTime.Now;
 
-            // Настройка скидок
-            discountComboBox.Items.AddRange(new object[] { "0%", "5%", "10%", "15%", "20%" });
-            discountComboBox.SelectedIndex = 0;
+            // Сразу показываем сгенерированный номер заказа в формате 000001
+            orderNumber = GenerateNextOrderNumber();
+            orderNumberValueLabel.Text = orderNumber;
 
-            // Подсказки
             SetPlaceholderText(searchProductsTextBox, "Поиск по названию или артикулу...");
-            SetPlaceholderText(searchClientTextBox, "Поиск клиента по ФИО или телефону...");
 
-            // Устанавливаем стиль
-            ApplyCoralButtonStyle();
-
-            foreach (Control control in this.Controls)
+            // Корзина: управление количеством — только клавишами вверх / вниз
+            cartDataGridView.KeyDown += CartDataGridView_KeyDown;
+            cartDataGridView.PreviewKeyDown += (s, e) =>
             {
-                if (control is DataGridView dgv)
-                {
-                    dgv.DataBindingComplete += (s, e) => {
-                        if (dgv.Columns.Contains("id"))
-                        {
-                            dgv.Columns["id"].Visible = false;
-                        }
-                    };
-                }
-            }
+                if (e.KeyCode == Keys.Up || e.KeyCode == Keys.Down)
+                    e.IsInputKey = true;
+            };
+
+            ApplyCoralButtonStyle();
+            SetupResponsiveLayout();
+
+            foreach (Control ctrl in this.Controls)
+                if (ctrl is DataGridView dgv)
+                    dgv.DataBindingComplete += (s, e) => { if (dgv.Columns.Contains("id")) dgv.Columns["id"].Visible = false; };
+
+            UpdateClientInfoLabel();
+            CalculateTotals();
         }
 
         private void SetupProductsDataGridView()
         {
-            // Очищаем все колонки
             productsDataGridView.Columns.Clear();
 
-            // Добавляем колонку с изображением - УВЕЛИЧЕННЫЕ РАЗМЕРЫ
-            DataGridViewImageColumn imageColumn = new DataGridViewImageColumn();
-            imageColumn.Name = "image";
-            imageColumn.HeaderText = "Фото";
-            imageColumn.ImageLayout = DataGridViewImageCellLayout.Zoom;
-            imageColumn.Width = 120; // УВЕЛИЧЕНО: было 60, стало 120
-            imageColumn.MinimumWidth = 100; // Минимальная ширина
-            imageColumn.FillWeight = 15; // Вес колонки при автоматическом заполнении
-
-            // Настройка высоты строк для лучшего отображения изображений
-            productsDataGridView.RowTemplate.Height = 100; // Устанавливаем высоту строки 100 пикселей
-            productsDataGridView.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None; // Отключаем авторазмер
-
+            DataGridViewImageColumn imageColumn = new DataGridViewImageColumn
+            {
+                Name = "image",
+                HeaderText = "Фото",
+                ImageLayout = DataGridViewImageCellLayout.Zoom,
+                Width = 110,
+                MinimumWidth = 90
+            };
             productsDataGridView.Columns.Add(imageColumn);
 
-            // Добавляем остальные колонки
             productsDataGridView.Columns.Add("id", "ID");
             productsDataGridView.Columns.Add("article", "Артикул");
             productsDataGridView.Columns.Add("name", "Название");
@@ -116,84 +118,97 @@ namespace Smirnov_kursovaya.secondForm
             productsDataGridView.Columns.Add("price", "Цена");
             productsDataGridView.Columns.Add("description", "Описание");
 
-            // Настройка колонок
             productsDataGridView.Columns["id"].Visible = false;
             productsDataGridView.Columns["price"].DefaultCellStyle.Format = "C2";
             productsDataGridView.Columns["description"].Visible = false;
 
-            // Настройка ширины остальных колонок
-            productsDataGridView.Columns["article"].Width = 100;
-            productsDataGridView.Columns["name"].Width = 200;
-            productsDataGridView.Columns["category"].Width = 150;
-            productsDataGridView.Columns["price"].Width = 100;
+            // Колонки распределены по всей ширине грида (Fill).
+            productsDataGridView.Columns["image"].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+            productsDataGridView.Columns["image"].Width = 110;
+            productsDataGridView.Columns["article"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            productsDataGridView.Columns["article"].FillWeight = 18;
+            productsDataGridView.Columns["name"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            productsDataGridView.Columns["name"].FillWeight = 38;
+            productsDataGridView.Columns["category"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            productsDataGridView.Columns["category"].FillWeight = 26;
+            productsDataGridView.Columns["price"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            productsDataGridView.Columns["price"].FillWeight = 18;
 
-            productsDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None; // ИЗМЕНЕНО: было Fill, теперь None для ручного контроля
             productsDataGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             productsDataGridView.ReadOnly = true;
             productsDataGridView.RowHeadersVisible = false;
+            productsDataGridView.RowTemplate.Height = 100;
 
-            // Настройка стиля сетки
             productsDataGridView.GridColor = Color.LightGray;
             productsDataGridView.CellBorderStyle = DataGridViewCellBorderStyle.Single;
-
-            // Устанавливаем чередование цветов строк
             productsDataGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 240, 255);
-
-            // Цвет выделенной строки
             productsDataGridView.DefaultCellStyle.SelectionBackColor = Color.FromArgb(230, 210, 250);
             productsDataGridView.DefaultCellStyle.SelectionForeColor = Color.Black;
-
-            // Цвет заголовков
+            productsDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10);
             productsDataGridView.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(255, 127, 80);
             productsDataGridView.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
             productsDataGridView.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
-            productsDataGridView.ColumnHeadersHeight = 50; // УВЕЛИЧЕНО: было 40, стало 50
+            productsDataGridView.ColumnHeadersHeight = 40;
             productsDataGridView.EnableHeadersVisualStyles = false;
         }
 
         private void SetupCartDataGridView()
         {
             cartDataGridView.Columns.Clear();
-
-            // Создаем колонки для корзины
             cartDataGridView.Columns.Add("ProductId", "ID товара");
             cartDataGridView.Columns.Add("ProductName", "Название");
             cartDataGridView.Columns.Add("Price", "Цена");
-            cartDataGridView.Columns.Add("Quantity", "Количество");
+            cartDataGridView.Columns.Add("Quantity", "Кол-во (↑/↓)");
             cartDataGridView.Columns.Add("Total", "Сумма");
 
-            // Скрываем колонку ID товара
             cartDataGridView.Columns["ProductId"].Visible = false;
-
-            // Форматируем колонки с деньгами
             cartDataGridView.Columns["Price"].DefaultCellStyle.Format = "C2";
             cartDataGridView.Columns["Total"].DefaultCellStyle.Format = "C2";
 
-            cartDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            // Колонки растянуты на всю ширину
+            cartDataGridView.Columns["ProductName"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            cartDataGridView.Columns["ProductName"].FillWeight = 50;
+            cartDataGridView.Columns["Price"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            cartDataGridView.Columns["Price"].FillWeight = 16;
+            cartDataGridView.Columns["Quantity"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            cartDataGridView.Columns["Quantity"].FillWeight = 17;
+            cartDataGridView.Columns["Total"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            cartDataGridView.Columns["Total"].FillWeight = 17;
+
             cartDataGridView.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             cartDataGridView.ReadOnly = true;
             cartDataGridView.RowHeadersVisible = false;
+            cartDataGridView.GridColor = Color.LightGray;
+            cartDataGridView.CellBorderStyle = DataGridViewCellBorderStyle.Single;
+            cartDataGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(248, 240, 255);
+            cartDataGridView.DefaultCellStyle.SelectionBackColor = Color.FromArgb(230, 210, 250);
+            cartDataGridView.DefaultCellStyle.SelectionForeColor = Color.Black;
+            cartDataGridView.DefaultCellStyle.Font = new Font("Segoe UI", 10);
+            cartDataGridView.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(255, 127, 80);
+            cartDataGridView.ColumnHeadersDefaultCellStyle.ForeColor = Color.White;
+            cartDataGridView.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 10, FontStyle.Bold);
+            cartDataGridView.ColumnHeadersHeight = 40;
+            cartDataGridView.EnableHeadersVisualStyles = false;
         }
 
         private void SetPlaceholderText(TextBox textBox, string placeholder)
         {
-            textBox.Tag = placeholder; // Сохраняем placeholder в Tag
-
+            textBox.Tag = placeholder;
             if (string.IsNullOrEmpty(textBox.Text))
             {
                 textBox.Text = placeholder;
                 textBox.ForeColor = Color.Gray;
             }
-
-            textBox.Enter += (s, e) => {
+            textBox.Enter += (s, e) =>
+            {
                 if (textBox.Text == placeholder)
                 {
                     textBox.Text = "";
                     textBox.ForeColor = Color.Black;
                 }
             };
-
-            textBox.Leave += (s, e) => {
+            textBox.Leave += (s, e) =>
+            {
                 if (string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     textBox.Text = placeholder;
@@ -204,208 +219,98 @@ namespace Smirnov_kursovaya.secondForm
 
         private void ApplyCoralButtonStyle()
         {
-            Color coralColor = Color.FromArgb(255, 127, 80); // Coral цвет
-            Color coralLightColor = Color.FromArgb(255, 147, 100); // Светлее для hover
-            Color coralDarkColor = Color.FromArgb(235, 107, 60); // Темнее для нажатия
+            Color coral = Color.FromArgb(255, 127, 80);
+            Color coralLight = Color.FromArgb(255, 147, 100);
+            Color coralDark = Color.FromArgb(235, 107, 60);
 
-            foreach (Control control in this.Controls)
+            foreach (Control ctrl in this.Controls)
             {
-                if (control is Button button)
-                {
-                    ApplyButtonStyle(button, coralColor, coralLightColor, coralDarkColor);
-                }
-                else if (control is GroupBox groupBox)
-                {
-                    foreach (Control subControl in groupBox.Controls)
-                    {
-                        if (subControl is Button subButton)
-                        {
-                            ApplyButtonStyle(subButton, coralColor, coralLightColor, coralDarkColor);
-                        }
-                    }
-                }
+                if (ctrl is Button btn)
+                    ApplyButtonStyle(btn, coral, coralLight, coralDark);
+                else if (ctrl is GroupBox grp)
+                    foreach (Control sub in grp.Controls)
+                        if (sub is Button b) ApplyButtonStyle(b, coral, coralLight, coralDark);
             }
 
-            // Особый стиль для кнопки меню (можно сделать другого цвета)
             if (menuButton != null)
             {
-                menuButton.BackColor = Color.Red; // Cornflower Blue
-                menuButton.FlatStyle = FlatStyle.Flat;
+                menuButton.BackColor = Color.Red;
                 menuButton.FlatAppearance.BorderColor = Color.DarkRed;
-                menuButton.FlatAppearance.BorderSize = 1;
-                menuButton.ForeColor = Color.Black;
-                menuButton.Font = new Font(menuButton.Font, FontStyle.Regular);
-
-                // Убираем старые обработчики и добавляем новые
-                menuButton.MouseEnter -= (s, e) => { };
-                menuButton.MouseLeave -= (s, e) => { };
-                menuButton.MouseDown -= (s, e) => { };
-                menuButton.MouseUp -= (s, e) => { };
-
-                menuButton.MouseEnter += (s, e) => {
-                    menuButton.BackColor = Color.IndianRed;
-                };
-                menuButton.MouseLeave += (s, e) => {
-                    menuButton.BackColor = Color.Red;
-                };
-                menuButton.MouseDown += (s, e) => {
-                    menuButton.BackColor = Color.OrangeRed;
-                };
-                menuButton.MouseUp += (s, e) => {
-                    menuButton.BackColor = Color.OrangeRed;
-                };
+                menuButton.MouseEnter += (s, e) => menuButton.BackColor = Color.IndianRed;
+                menuButton.MouseLeave += (s, e) => menuButton.BackColor = Color.Red;
             }
         }
 
-        private void ApplyButtonStyle(Button button, Color normalColor, Color hoverColor, Color pressedColor)
+        private void ApplyButtonStyle(Button button, Color normal, Color hover, Color pressed)
         {
-            button.BackColor = normalColor;
+            button.BackColor = normal;
             button.FlatStyle = FlatStyle.Flat;
             button.FlatAppearance.BorderColor = Color.FromArgb(235, 107, 60);
             button.FlatAppearance.BorderSize = 1;
             button.ForeColor = Color.Black;
-            button.Font = new Font(button.Font, FontStyle.Regular);
 
-            // Убираем старые обработчики
-            button.MouseEnter -= (s, e) => { };
-            button.MouseLeave -= (s, e) => { };
-            button.MouseDown -= (s, e) => { };
-            button.MouseUp -= (s, e) => { };
-
-            // Добавляем новые обработчики
-            button.MouseEnter += (s, e) => {
-                button.BackColor = hoverColor;
-            };
-            button.MouseLeave += (s, e) => {
-                button.BackColor = normalColor;
-            };
-            button.MouseDown += (s, e) => {
-                button.BackColor = pressedColor;
-            };
-            button.MouseUp += (s, e) => {
-                button.BackColor = hoverColor;
-            };
+            button.MouseEnter += (s, e) => button.BackColor = hover;
+            button.MouseLeave += (s, e) => button.BackColor = normal;
+            button.MouseDown += (s, e) => button.BackColor = pressed;
+            button.MouseUp += (s, e) => button.BackColor = hover;
         }
 
-        private void LoadData()
-        {
-            LoadClients();
-            LoadProducts();
-        }
-
-        private void LoadClients()
+        // ==================== Генерация номера заказа ====================
+        // Формат: 000001, 000002, ..., 000010, ... (минимум 6 цифр).
+        private string GenerateNextOrderNumber()
         {
             try
             {
-                using (var connection = dbHelper.GetConnection())
+                using (var conn = dbHelper.GetConnection())
                 {
-                    connection.Open();
-                    string query = @"SELECT id, fio, phone FROM clients ORDER BY fio";
-                    using (var command = new MySqlCommand(query, connection))
-                    using (var adapter = new MySqlDataAdapter(command))
+                    conn.Open();
+                    string query = @"SELECT COALESCE(MAX(CAST(order_number AS UNSIGNED)), 0) + 1
+                                     FROM orders
+                                     WHERE order_number REGEXP '^[0-9]+$'";
+                    using (var cmd = new MySqlCommand(query, conn))
                     {
-                        clientsData = new DataTable();
-                        adapter.Fill(clientsData);
-                        UpdateClientComboBox("");
+                        long next = Convert.ToInt64(cmd.ExecuteScalar());
+                        return next.ToString("D6");
                     }
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                MessageBox.Show($"Ошибка загрузки клиентов: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return "000001";
             }
         }
 
-        private void UpdateClientComboBox(string searchText)
-        {
-            clientComboBox.Items.Clear();
-
-            if (clientsData != null)
-            {
-                var rows = clientsData.Select($"fio LIKE '%{searchText}%' OR phone LIKE '%{searchText}%'");
-
-                foreach (DataRow row in rows)
-                {
-                    clientComboBox.Items.Add(new ClientItem
-                    {
-                        Id = Convert.ToInt32(row["id"]),
-                        Display = $"{row["fio"]} ({row["phone"]})"
-                    });
-                }
-
-                if (clientComboBox.Items.Count > 0)
-                {
-                    clientComboBox.DisplayMember = "Display";
-                    clientComboBox.ValueMember = "Id";
-                }
-            }
-        }
-
+        // ==================== Загрузка товаров ====================
         private void LoadProducts()
         {
             try
             {
-                using (var connection = dbHelper.GetConnection())
+                using (var conn = dbHelper.GetConnection())
                 {
-                    connection.Open();
-                    string query = @"SELECT p.id, p.article, p.name, c.name as category, 
-                            p.price, p.description, p.image
-                            FROM products p 
-                            INNER JOIN categories c ON p.category_id = c.id
-                            ORDER BY p.name";
-                    using (var command = new MySqlCommand(query, connection))
-                    using (var reader = command.ExecuteReader())
+                    conn.Open();
+                    string query = @"SELECT p.id, p.article, p.name, c.name as category, p.price, p.description
+                                    FROM products p 
+                                    INNER JOIN categories c ON p.category_id = c.id
+                                    ORDER BY p.name";
+                    using (var cmd = new MySqlCommand(query, conn))
+                    using (var reader = cmd.ExecuteReader())
                     {
                         productsDataGridView.Rows.Clear();
-
                         while (reader.Read())
                         {
-                            int rowIndex = productsDataGridView.Rows.Add();
-                            DataGridViewRow row = productsDataGridView.Rows[rowIndex];
+                            int idx = productsDataGridView.Rows.Add();
+                            DataGridViewRow row = productsDataGridView.Rows[idx];
 
-                            // Изображение - УЛУЧШЕННАЯ ОБРАБОТКА
-                            byte[] imageData = reader["image"] != DBNull.Value ?
-                                (byte[])reader["image"] : null;
+                            string article = reader["article"].ToString();
+                            Image img = GetProductImageFromFileSystem(article);
 
-                            if (imageData != null && imageData.Length > 0)
-                            {
-                                try
-                                {
-                                    using (var ms = new System.IO.MemoryStream(imageData))
-                                    {
-                                        // Загружаем оригинальное изображение
-                                        Image originalImage = Image.FromStream(ms);
-
-                                        // Создаем копию изображения, чтобы избежать проблем с блокировкой потока
-                                        Image displayImage = new Bitmap(originalImage);
-
-                                        // Устанавливаем изображение в ячейку
-                                        row.Cells["image"].Value = displayImage;
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    // Если не удалось загрузить изображение, создаем заглушку
-                                    row.Cells["image"].Value = CreatePlaceholderImage("Нет фото");
-                                    Console.WriteLine($"Ошибка загрузки изображения: {ex.Message}");
-                                }
-                            }
-                            else
-                            {
-                                // Создаем изображение-заглушку
-                                row.Cells["image"].Value = CreatePlaceholderImage("Нет фото");
-                            }
-
-                            // Остальные данные
+                            row.Cells["image"].Value = img ?? CreatePlaceholderImage("Нет фото");
                             row.Cells["id"].Value = reader["id"];
-                            row.Cells["article"].Value = reader["article"];
+                            row.Cells["article"].Value = article;
                             row.Cells["name"].Value = reader["name"];
                             row.Cells["category"].Value = reader["category"];
                             row.Cells["price"].Value = reader["price"];
                             row.Cells["description"].Value = reader["description"]?.ToString() ?? "";
-
-                            // Устанавливаем высоту строки индивидуально (опционально)
                             row.Height = 100;
                         }
                     }
@@ -413,81 +318,94 @@ namespace Smirnov_kursovaya.secondForm
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка загрузки товаров: {ex.Message}", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Ошибка загрузки товаров: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        // Вспомогательный метод для создания изображения-заглушки
+        private Image GetProductImageFromFileSystem(string article)
+        {
+            string[] exts = { ".jpg", ".jpeg", ".png", ".bmp", ".gif" };
+            foreach (var ext in exts)
+            {
+                string path = Path.Combine(imagesFolderPath, article + ext);
+                if (File.Exists(path))
+                    try { return Image.FromFile(path); } catch { }
+            }
+            foreach (var ext in exts)
+            {
+                string path = Path.Combine(imagesResourceFolder, article + ext);
+                if (File.Exists(path))
+                    try { return Image.FromFile(path); } catch { }
+            }
+            return null;
+        }
+
         private Image CreatePlaceholderImage(string text)
         {
-            Bitmap placeholder = new Bitmap(100, 80); // Размер под нашу ячейку
-            using (Graphics g = Graphics.FromImage(placeholder))
+            Bitmap bmp = new Bitmap(100, 80);
+            using (Graphics g = Graphics.FromImage(bmp))
             {
-                // Заливаем фон светло-серым
                 g.Clear(Color.LightGray);
-
-                // Рисуем рамку
                 using (Pen pen = new Pen(Color.Gray, 1))
-                {
-                    g.DrawRectangle(pen, 0, 0, placeholder.Width - 1, placeholder.Height - 1);
-                }
-
-                // Рисуем текст
-                using (Font font = new Font("Arial", 8, FontStyle.Regular))
-                using (StringFormat sf = new StringFormat())
-                {
-                    sf.Alignment = StringAlignment.Center;
-                    sf.LineAlignment = StringAlignment.Center;
-
-                    using (Brush brush = new SolidBrush(Color.DimGray))
-                    {
-                        g.DrawString(text, font, brush,
-                            new RectangleF(0, 0, placeholder.Width, placeholder.Height), sf);
-                    }
-                }
+                    g.DrawRectangle(pen, 0, 0, bmp.Width - 1, bmp.Height - 1);
+                using (Font font = new Font("Arial", 8))
+                using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                using (Brush brush = new SolidBrush(Color.DimGray))
+                    g.DrawString(text, font, brush, new RectangleF(0, 0, bmp.Width, bmp.Height), sf);
             }
-            return placeholder;
+            return bmp;
         }
 
-        private void NewOrderForm_Load(object sender, EventArgs e)
+        // ==================== Кнопка «Выбрать клиента» ====================
+        // Открывает форму «Клиенты» в режиме выбора. После закрытия по «Подтвердить выбор»
+        // забираем выбранного клиента и пишем его в поля формы.
+        private void clientsButton_Click(object sender, EventArgs e)
         {
-            UpdateCartDisplay();
+            using (var clientsForm = new ClientsForm())
+            {
+                clientsForm.OpenedFromOrder = true;
+                if (clientsForm.ShowDialog(this) == DialogResult.OK && clientsForm.SelectedClientId > 0)
+                {
+                    selectedClientId = clientsForm.SelectedClientId;
+                    selectedClientName = clientsForm.SelectedClientName;
+                    selectedClientPhone = clientsForm.SelectedClientPhone;
+                    UpdateClientInfoLabel();
+                }
+            }
         }
 
-        private void addToCartButton_Click(object sender, EventArgs e)
+        private void UpdateClientInfoLabel()
         {
-            if (productsDataGridView.SelectedRows.Count == 0)
+            if (selectedClientId > 0)
             {
-                MessageBox.Show("Выберите товар для добавления в корзину", "Информация",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            DataGridViewRow selectedRow = productsDataGridView.SelectedRows[0];
-            int productId = Convert.ToInt32(selectedRow.Cells["id"].Value);
-            string productName = selectedRow.Cells["name"].Value.ToString();
-            decimal price = Convert.ToDecimal(selectedRow.Cells["price"].Value);
-
-            // Проверяем, есть ли товар уже в корзине
-            OrderItem existingItem = cartItems.Find(item => item.ProductId == productId);
-
-            if (existingItem != null)
-            {
-                existingItem.Quantity++;
-                existingItem.Total = existingItem.Quantity * existingItem.Price;
+                clientInfoLabel.Text = $"  {selectedClientName} — {selectedClientPhone}";
+                clientInfoLabel.ForeColor = Color.Black;
             }
             else
             {
-                OrderItem newItem = new OrderItem
-                {
-                    ProductId = productId,
-                    ProductName = productName,
-                    Price = price,
-                    Quantity = 1,
-                    Total = price
-                };
-                cartItems.Add(newItem);
+                clientInfoLabel.Text = "  клиент не выбран";
+                clientInfoLabel.ForeColor = Color.DimGray;
+            }
+        }
+
+        // ==================== Корзина ====================
+        private void addToCartButton_Click(object sender, EventArgs e)
+        {
+            if (productsDataGridView.SelectedRows.Count == 0) return;
+            var row = productsDataGridView.SelectedRows[0];
+            int pid = Convert.ToInt32(row.Cells["id"].Value);
+            string name = row.Cells["name"].Value.ToString();
+            decimal price = Convert.ToDecimal(row.Cells["price"].Value);
+
+            var existing = cartItems.FirstOrDefault(i => i.ProductId == pid);
+            if (existing != null)
+            {
+                existing.Quantity++;
+                existing.Total = existing.Quantity * existing.Price;
+            }
+            else
+            {
+                cartItems.Add(new OrderItem { ProductId = pid, ProductName = name, Price = price, Quantity = 1, Total = price });
             }
 
             UpdateCartDisplay();
@@ -496,372 +414,358 @@ namespace Smirnov_kursovaya.secondForm
 
         private void removeFromCartButton_Click(object sender, EventArgs e)
         {
-            if (cartDataGridView.SelectedRows.Count == 0)
-            {
-                MessageBox.Show("Выберите товар для удаления из корзины", "Информация",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            DataGridViewRow selectedRow = cartDataGridView.SelectedRows[0];
-            if (selectedRow.Cells["ProductId"].Value == null)
-            {
-                return;
-            }
-
-            int productId = Convert.ToInt32(selectedRow.Cells["ProductId"].Value);
-
-            cartItems.RemoveAll(item => item.ProductId == productId);
+            if (cartDataGridView.SelectedRows.Count == 0) return;
+            int pid = Convert.ToInt32(cartDataGridView.SelectedRows[0].Cells["ProductId"].Value);
+            cartItems.RemoveAll(i => i.ProductId == pid);
             UpdateCartDisplay();
             CalculateTotals();
         }
 
-        private void updateQuantityButton_Click(object sender, EventArgs e)
+        // Управление количеством товара клавишами ↑ / ↓.
+        // ↑ — добавить (+1); ↓ — убрать (-1). Минимум 0; на 0 убрать нельзя.
+        private void CartDataGridView_KeyDown(object sender, KeyEventArgs e)
         {
-            if (cartDataGridView.SelectedRows.Count == 0)
-            {
-                MessageBox.Show("Выберите товар для изменения количества", "Информация",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
+            if (cartDataGridView.SelectedRows.Count == 0) return;
+            int pid = Convert.ToInt32(cartDataGridView.SelectedRows[0].Cells["ProductId"].Value);
+            var item = cartItems.FirstOrDefault(i => i.ProductId == pid);
+            if (item == null) return;
 
-            string quantityText = quantityTextBox.Text;
-            if (quantityText == "1" || quantityText == quantityTextBox.Tag?.ToString())
+            if (e.KeyCode == Keys.Up)
             {
-                MessageBox.Show("Введите количество", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            if (!int.TryParse(quantityText, out int newQuantity) || newQuantity <= 0)
-            {
-                MessageBox.Show("Введите корректное количество (больше 0)", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            DataGridViewRow selectedRow = cartDataGridView.SelectedRows[0];
-            if (selectedRow.Cells["ProductId"].Value == null)
-            {
-                return;
-            }
-
-            int productId = Convert.ToInt32(selectedRow.Cells["ProductId"].Value);
-
-            OrderItem item = cartItems.Find(i => i.ProductId == productId);
-            if (item != null)
-            {
-                item.Quantity = newQuantity;
+                item.Quantity++;
                 item.Total = item.Quantity * item.Price;
+                UpdateCartDisplay();
+                CalculateTotals();
+                ReselectCartRow(pid);
+                e.Handled = true;
             }
+            else if (e.KeyCode == Keys.Down)
+            {
+                if (item.Quantity > 0)
+                {
+                    item.Quantity--;
+                    item.Total = item.Quantity * item.Price;
+                    UpdateCartDisplay();
+                    CalculateTotals();
+                    ReselectCartRow(pid);
+                }
+                e.Handled = true;
+            }
+        }
 
-            UpdateCartDisplay();
-            CalculateTotals();
+        private void ReselectCartRow(int productId)
+        {
+            foreach (DataGridViewRow row in cartDataGridView.Rows)
+            {
+                if (row.Cells["ProductId"].Value != null && Convert.ToInt32(row.Cells["ProductId"].Value) == productId)
+                {
+                    row.Selected = true;
+                    cartDataGridView.CurrentCell = row.Cells["Quantity"];
+                    break;
+                }
+            }
         }
 
         private void UpdateCartDisplay()
         {
             cartDataGridView.Rows.Clear();
-
             foreach (var item in cartItems)
             {
-                int rowIndex = cartDataGridView.Rows.Add();
-                DataGridViewRow row = cartDataGridView.Rows[rowIndex];
-
-                row.Cells["ProductId"].Value = item.ProductId;
-                row.Cells["ProductName"].Value = item.ProductName;
-                row.Cells["Price"].Value = item.Price;
-                row.Cells["Quantity"].Value = item.Quantity;
-                row.Cells["Total"].Value = item.Total;
+                int idx = cartDataGridView.Rows.Add();
+                cartDataGridView.Rows[idx].Cells["ProductId"].Value = item.ProductId;
+                cartDataGridView.Rows[idx].Cells["ProductName"].Value = item.ProductName;
+                cartDataGridView.Rows[idx].Cells["Price"].Value = item.Price;
+                cartDataGridView.Rows[idx].Cells["Quantity"].Value = item.Quantity;
+                cartDataGridView.Rows[idx].Cells["Total"].Value = item.Total;
             }
+        }
+
+        // ==================== Автоматический расчёт скидки ====================
+        // 1) скидка от количества позиций; 2) скидка от суммы покупки; 3) день недели — пн = 20%.
+        // Берём максимальную из применимых.
+        private decimal CalculateAutoDiscount(int positionsCount, decimal sumValue, DateTime now)
+        {
+            decimal byPositions = 0;
+            if (positionsCount >= 10) byPositions = 10;
+            else if (positionsCount >= 5) byPositions = 5;
+
+            decimal bySum = 0;
+            if (sumValue >= 15000m) bySum = 10;
+            else if (sumValue >= 5000m) bySum = 5;
+
+            decimal byDay = (now.DayOfWeek == DayOfWeek.Monday) ? 20m : 0m;
+
+            return Math.Max(byDay, Math.Max(byPositions, bySum));
         }
 
         private void CalculateTotals()
         {
-            subtotal = 0;
-            foreach (var item in cartItems)
-            {
-                subtotal += item.Total;
-            }
-
-            decimal discountAmount = subtotal * (discountPercent / 100);
+            subtotal = cartItems.Sum(i => i.Total);
+            int positions = cartItems.Count(i => i.Quantity > 0);
+            discountPercent = CalculateAutoDiscount(positions, subtotal, DateTime.Now);
+            discountAmount = subtotal * discountPercent / 100m;
             decimal total = subtotal - discountAmount;
 
-            subtotalLabel.Text = total.ToString("C2"); // ИСПРАВЛЕНО: было subtotalLabel, теперь total
-            discountAmountLabel.Text = discountAmount.ToString("C2");
+            subtotalLabel.Text = subtotal.ToString("C2");
+            discountAmountLabel.Text = $"{discountAmount.ToString("C2")} ({discountPercent}%)";
             totalLabel.Text = total.ToString("C2");
         }
 
-        private void discountComboBox_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (discountComboBox.SelectedItem != null)
-            {
-                string discountText = discountComboBox.SelectedItem.ToString();
-                discountText = discountText.Replace("%", "");
-                if (decimal.TryParse(discountText, out discountPercent))
-                {
-                    CalculateTotals();
-                }
-            }
-        }
-
+        // ==================== Оформление заказа ====================
         private void createOrderButton_Click(object sender, EventArgs e)
         {
-            if (clientComboBox.SelectedItem == null)
+            if (selectedClientId <= 0)
             {
-                MessageBox.Show("Выберите клиента", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Выберите клиента (кнопка «Выбрать клиента»)", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
-
-            if (cartItems.Count == 0)
+            if (cartItems.Count == 0 || cartItems.All(i => i.Quantity <= 0))
             {
-                MessageBox.Show("Добавьте товары в корзину", "Ошибка",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Корзина пуста", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
+            decimal finalAmountPreview = subtotal - discountAmount;
+            if (MessageBox.Show($"Оформить заказ на сумму {finalAmountPreview:C2}?", "Подтверждение",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
 
             try
             {
-                ClientItem selectedClient = (ClientItem)clientComboBox.SelectedItem; // ИСПРАВЛЕНО: явное приведение типа
-                int clientId = selectedClient.Id;
+                int clientId = selectedClientId;
+                long orderId;
 
-                using (var connection = dbHelper.GetConnection())
+                using (var conn = dbHelper.GetConnection())
                 {
-                    connection.Open();
-
-                    using (var transaction = connection.BeginTransaction())
+                    conn.Open();
+                    using (var tran = conn.BeginTransaction())
                     {
-                        try
+                        // Перегенерируем номер на момент сохранения, чтобы избежать гонки
+                        orderNumber = GenerateNextOrderNumber();
+                        decimal totalAmount = subtotal;
+                        decimal finalAmount = totalAmount - discountAmount;
+
+                        string orderQuery = @"INSERT INTO orders (client_id, product_id, date_of_creation, date_of_completion, status_id, discount, total_amount, final_amount, notes, order_number)
+                                              VALUES (@client_id, @product_id, @date_of_creation, @date_of_completion, 1, @discount, @total_amount, @final_amount, @notes, @order_number);
+                                              SELECT LAST_INSERT_ID();";
+                        using (var cmd = new MySqlCommand(orderQuery, conn, tran))
                         {
-                            // Создаем заказ
-                            string orderQuery = @"INSERT INTO orders (client_id, product_id, date_of_creation, 
-                                                date_of_completion, status_id, discount, total_amount, 
-                                                final_amount, notes, order_number) 
-                                                VALUES (@client_id, @product_id, @date_of_creation, @date_of_completion, 
-                                                1, @discount, @total_amount, @final_amount, @notes, @order_number);
-                                                SELECT LAST_INSERT_ID();";
-
-                            string orderNumber = GenerateOrderNumber();
-                            decimal totalAmount = subtotal;
-
-                            // Получаем итоговую сумму из totalLabel
-                            string totalText = totalLabel.Text.Replace("₽", "").Replace("$", "").Replace(" ", "").Replace("руб", "").Trim();
-
-                            if (!decimal.TryParse(totalText, out decimal finalAmount))
-                            {
-                                finalAmount = subtotal * (1 - discountPercent / 100);
-                            }
-
-                            long orderId;
-
-                            using (var orderCommand = new MySqlCommand(orderQuery, connection, transaction))
-                            {
-                                orderCommand.Parameters.AddWithValue("@client_id", clientId);
-                                orderCommand.Parameters.AddWithValue("@product_id", cartItems[0].ProductId); // Берем первый товар
-                                orderCommand.Parameters.AddWithValue("@date_of_creation", DateTime.Now);
-                                orderCommand.Parameters.AddWithValue("@date_of_completion", completionDatePicker.Value);
-                                orderCommand.Parameters.AddWithValue("@discount", $"{discountPercent}%");
-                                orderCommand.Parameters.AddWithValue("@total_amount", totalAmount);
-                                orderCommand.Parameters.AddWithValue("@final_amount", finalAmount);
-                                orderCommand.Parameters.AddWithValue("@notes", DBNull.Value);
-                                orderCommand.Parameters.AddWithValue("@order_number", orderNumber);
-
-                                orderId = Convert.ToInt64(orderCommand.ExecuteScalar());
-                            }
-
-                            // Добавляем товары в заказ
-                            foreach (var item in cartItems)
-                            {
-                                string itemQuery = @"INSERT INTO order_items (order_id, product_id, 
-                                                   quantity, price, total) 
-                                                   VALUES (@order_id, @product_id, @quantity, 
-                                                   @price, @total)";
-
-                                using (var itemCommand = new MySqlCommand(itemQuery, connection, transaction))
-                                {
-                                    itemCommand.Parameters.AddWithValue("@order_id", orderId);
-                                    itemCommand.Parameters.AddWithValue("@product_id", item.ProductId);
-                                    itemCommand.Parameters.AddWithValue("@quantity", item.Quantity);
-                                    itemCommand.Parameters.AddWithValue("@price", item.Price);
-                                    itemCommand.Parameters.AddWithValue("@total", item.Total);
-
-                                    itemCommand.ExecuteNonQuery();
-                                }
-                            }
-
-                            transaction.Commit();
-
-                            MessageBox.Show($"Заказ №{orderNumber} успешно создан!", "Успех",
-                                MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                            ClearForm();
+                            cmd.Parameters.AddWithValue("@client_id", clientId);
+                            cmd.Parameters.AddWithValue("@product_id", cartItems[0].ProductId);
+                            // Явный DateTime с временем. EnsureOrderDateTimeColumn() выше гарантирует DATETIME колонку
+                            // в БД, иначе MySQL усекал бы H:M в 00:00.
+                            cmd.Parameters.AddWithValue("@date_of_creation", DateTime.Now);
+                            cmd.Parameters.AddWithValue("@date_of_completion", completionDatePicker.Value);
+                            // Скидку храним числом (без символа %), чтобы ViewOrder распарсивал её в decimal.
+                            cmd.Parameters.AddWithValue("@discount", discountPercent);
+                            cmd.Parameters.AddWithValue("@total_amount", totalAmount);
+                            cmd.Parameters.AddWithValue("@final_amount", finalAmount);
+                            cmd.Parameters.AddWithValue("@notes", DBNull.Value);
+                            cmd.Parameters.AddWithValue("@order_number", orderNumber);
+                            orderId = Convert.ToInt64(cmd.ExecuteScalar());
                         }
-                        catch (Exception ex)
+
+                        foreach (var item in cartItems)
                         {
-                            transaction.Rollback();
-                            throw new Exception($"Ошибка создания заказа: {ex.Message}");
+                            if (item.Quantity <= 0) continue;
+                            string itemQuery = "INSERT INTO order_items (order_id, product_id, quantity, price, total) VALUES (@oid, @pid, @qty, @price, @total)";
+                            using (var cmd = new MySqlCommand(itemQuery, conn, tran))
+                            {
+                                cmd.Parameters.AddWithValue("@oid", orderId);
+                                cmd.Parameters.AddWithValue("@pid", item.ProductId);
+                                cmd.Parameters.AddWithValue("@qty", item.Quantity);
+                                cmd.Parameters.AddWithValue("@price", item.Price);
+                                cmd.Parameters.AddWithValue("@total", item.Total);
+                                cmd.ExecuteNonQuery();
+                            }
                         }
+                        tran.Commit();
                     }
                 }
+
+                MessageBox.Show($"Заказ №{orderNumber} оформлен. Статус: принят.",
+                    "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                // Переход на форму просмотра заказа
+                using (var view = new ViewOrderForm((int)orderId, false))
+                {
+                    view.ShowDialog(this);
+                }
+
+                this.Close();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(ex.Message, "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Ошибка: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        private string GenerateOrderNumber()
+        // ==================== Прочие обработчики ====================
+        private void NewOrderForm_Load(object sender, EventArgs e)
         {
-            return $"ORD{DateTime.Now:yyyyMMddHHmmss}";
-        }
-
-        private void ClearForm()
-        {
-            cartItems.Clear();
             UpdateCartDisplay();
-            CalculateTotals();
-            discountComboBox.SelectedIndex = 0;
-
-            // Сброс поисковых полей
-            searchProductsTextBox.Text = "Поиск по названию или артикулу...";
-            searchProductsTextBox.ForeColor = Color.Gray;
-
-            searchClientTextBox.Text = "Поиск клиента по ФИО или телефону...";
-            searchClientTextBox.ForeColor = Color.Gray;
-
-            clientComboBox.SelectedIndex = -1;
-            quantityTextBox.Text = "1";
-            quantityTextBox.ForeColor = Color.Gray;
         }
 
+        // Гарантируем, что колонка date_of_creation — именно DATETIME, иначе MySQL
+        // будет усекать время и в списке заказов всегда будет 00:00.
+        // Для date_of_completion — также DATETIME (храним выбранную дату).
+        // Операция идемпотентна: если колонки уже DATETIME — ALTER ничего не меняет.
+        private void EnsureOrderDateTimeColumn()
+        {
+            try
+            {
+                using (var conn = dbHelper.GetConnection())
+                {
+                    conn.Open();
+                    using (var cmd = new MySqlCommand("ALTER TABLE orders MODIFY date_of_creation DATETIME NULL", conn))
+                        cmd.ExecuteNonQuery();
+                    using (var cmd = new MySqlCommand("ALTER TABLE orders MODIFY date_of_completion DATETIME NULL", conn))
+                        cmd.ExecuteNonQuery();
+                }
+            }
+            catch { /* колонки могут быть уже корректного типа — это ожидаемый случай */ }
+        }
+
+        private void productsDataGridView_CellContentClick(object sender, DataGridViewCellEventArgs e) { }
+        private void cartDataGridView_CellContentClick(object sender, DataGridViewCellEventArgs e) { }
+        private void cartDataGridView_SelectionChanged(object sender, EventArgs e) { }
+
+        // Поиск товаров строго с начала названия / артикула.
         private void searchProductsTextBox_TextChanged(object sender, EventArgs e)
         {
-            string searchText = searchProductsTextBox.Text;
-            if (searchText == "Поиск по названию или артикулу...")
-                return;
+            string txt = searchProductsTextBox.Text;
+            if (txt == "Поиск по названию или артикулу...") return;
+            string q = (txt ?? "").ToLower();
 
             foreach (DataGridViewRow row in productsDataGridView.Rows)
             {
                 if (row.Cells["name"].Value == null) continue;
-
-                string name = row.Cells["name"].Value?.ToString() ?? "";
-                string article = row.Cells["article"].Value?.ToString() ?? "";
-
-                bool visible = string.IsNullOrEmpty(searchText) ||
-                              name.ToLower().Contains(searchText.ToLower()) ||
-                              article.ToLower().Contains(searchText.ToLower());
-
-                row.Visible = visible;
+                string name = row.Cells["name"].Value.ToString().ToLower();
+                string art = row.Cells["article"].Value.ToString().ToLower();
+                row.Visible = string.IsNullOrEmpty(q) || name.StartsWith(q) || art.StartsWith(q);
             }
         }
 
-        private void searchClientTextBox_TextChanged(object sender, EventArgs e)
-        {
-            string searchText = searchClientTextBox.Text;
-            if (searchText == "Поиск клиента по ФИО или телефону...")
-                return;
-
-            UpdateClientComboBox(searchText);
-        }
-
-        private void cartDataGridView_SelectionChanged(object sender, EventArgs e)
-        {
-            if (cartDataGridView.SelectedRows.Count > 0 &&
-                cartDataGridView.SelectedRows[0].Cells["Quantity"].Value != null)
-            {
-                DataGridViewRow selectedRow = cartDataGridView.SelectedRows[0];
-                quantityTextBox.Text = selectedRow.Cells["Quantity"].Value.ToString();
-                quantityTextBox.ForeColor = Color.Black;
-            }
-            else
-            {
-                quantityTextBox.Text = "1";
-                quantityTextBox.ForeColor = Color.Gray;
-            }
-        }
-
-        private void menuButton_Click(object sender, EventArgs e)
-        {
-            this.Close();
-        }
-
-        private void quantityTextBox_KeyPress(object sender, KeyPressEventArgs e)
-        {
-            // Разрешаем только цифры и Backspace
-            if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar))
-            {
-                e.Handled = true;
-            }
-        }
+        private void menuButton_Click(object sender, EventArgs e) => this.Close();
 
         private void clearCartButton_Click(object sender, EventArgs e)
         {
-            if (cartItems.Count > 0)
+            if (cartItems.Count > 0 && MessageBox.Show("Очистить корзину?", "Подтверждение", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
-                DialogResult result = MessageBox.Show("Очистить всю корзину?", "Подтверждение",
-                    MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-
-                if (result == DialogResult.Yes)
-                {
-                    cartItems.Clear();
-                    UpdateCartDisplay();
-                    CalculateTotals();
-                }
+                cartItems.Clear();
+                UpdateCartDisplay();
+                CalculateTotals();
             }
         }
 
-        private void quantityTextBox_Enter(object sender, EventArgs e)
+        // Растяжение на весь экран — расставляем якоря всем основным контролам.
+        private void SetupResponsiveLayout()
         {
-            if (quantityTextBox.Text == "1" || quantityTextBox.Text == quantityTextBox.Tag?.ToString())
-            {
-                quantityTextBox.Text = "";
-                quantityTextBox.ForeColor = Color.Black;
-            }
+            this.MinimumSize = new Size(1040, 740);
+            this.WindowState = FormWindowState.Maximized;
+
+            this.Resize += (s, e) => AdjustNewOrderLayout();
+            AdjustNewOrderLayout();
         }
 
-        private void quantityTextBox_Leave(object sender, EventArgs e)
+        // Программная подгонка под макет (как на скриншоте заказчика):
+        // сверху — большой грид «Товары», под ним кнопка «Добавить в корзину» (слева),
+        // далее строка «Корзина:» + подсказка, ниже компактный грид корзины и панель «Итоги»
+        // справа от корзины, в самом низу — три кнопки (Удалить / Очистить / Оформить).
+        private void AdjustNewOrderLayout()
         {
-            if (string.IsNullOrWhiteSpace(quantityTextBox.Text))
-            {
-                quantityTextBox.Text = "1";
-                quantityTextBox.ForeColor = Color.Gray;
-            }
-        }
+            const int margin = 12;
+            const int rightPanelWidth = 283;
+            const int gap = 8;
+            // Зазор между нижним краем корзины/totalsPanel и верхним краем нижней
+            // строки кнопок. Делаем большим, чтобы totalsPanel визуально не «приклеивалась»
+            // к кнопке «Оформить заказ» — между ними должно быть свободное пространство.
+            const int bottomGap = 32;
+            const int bottomBtnH = 32;
+            const int createBtnH = 40;
+            const int cartH = 70;
+            const int cartLabelGap = 26;
+            const int addBtnH = 32;
 
-        private void searchProductsTextBox_Enter(object sender, EventArgs e)
-        {
-            if (searchProductsTextBox.Text == "Поиск по названию или артикулу...")
-            {
-                searchProductsTextBox.Text = "";
-                searchProductsTextBox.ForeColor = Color.Black;
-            }
-        }
+            int rightX = this.ClientSize.Width - rightPanelWidth - margin;
+            int clientH = this.ClientSize.Height;
 
-        private void searchProductsTextBox_Leave(object sender, EventArgs e)
-        {
-            if (string.IsNullOrWhiteSpace(searchProductsTextBox.Text))
-            {
-                searchProductsTextBox.Text = "Поиск по названию или артикулу...";
-                searchProductsTextBox.ForeColor = Color.Gray;
-            }
-        }
+            // ==== Нижняя строка кнопок (выровнены по нижней границе формы) ====
+            int btnBottom = clientH - margin;
+            int bottomBtnTop = btnBottom - bottomBtnH;
+            int createBtnTop = btnBottom - createBtnH;
 
-        private void searchClientTextBox_Enter(object sender, EventArgs e)
-        {
-            if (searchClientTextBox.Text == "Поиск клиента по ФИО или телефону...")
+            if (removeFromCartButton != null)
             {
-                searchClientTextBox.Text = "";
-                searchClientTextBox.ForeColor = Color.Black;
+                removeFromCartButton.Top = bottomBtnTop;
+                removeFromCartButton.Left = margin;
             }
-        }
-
-        private void searchClientTextBox_Leave(object sender, EventArgs e)
-        {
-            if (string.IsNullOrWhiteSpace(searchClientTextBox.Text))
+            if (clearCartButton != null)
             {
-                searchClientTextBox.Text = "Поиск клиента по ФИО или телефону...";
-                searchClientTextBox.ForeColor = Color.Gray;
+                clearCartButton.Top = bottomBtnTop;
+                clearCartButton.Left = margin + 178;
+            }
+            if (createOrderButton != null)
+            {
+                createOrderButton.Top = createBtnTop;
+                createOrderButton.Left = rightX;
+                createOrderButton.Width = rightPanelWidth;
+            }
+
+            // ==== Грид корзины + панель «Итоги» (над нижней строкой кнопок) ====
+            // Корзина и totalsPanel — одинаковой высоты и одной горизонтальной полосой.
+            // Высоту корзины увеличиваем (= высота totalsPanel), чтобы было видно
+            // несколько строк сразу. Над ними — заголовок «Корзина:» и подсказка.
+            int cartBottom = createBtnTop - bottomGap;
+            int rowH = cartH + cartLabelGap;  // итоговая высота полосы (корзина = totalsPanel)
+            int rowTop = cartBottom - rowH;
+
+            if (cartDataGridView != null)
+            {
+                cartDataGridView.Left = margin;
+                cartDataGridView.Top = rowTop;
+                cartDataGridView.Width = rightX - margin - gap;
+                cartDataGridView.Height = rowH;
+            }
+
+            // Панель «Итоги» — на той же горизонтали, та же высота что и корзина.
+            if (totalsPanel != null)
+            {
+                totalsPanel.Top = rowTop;
+                totalsPanel.Left = rightX;
+                totalsPanel.Width = rightPanelWidth;
+                totalsPanel.Height = rowH;
+            }
+
+            // Надпись «Корзина:» и подсказка в одной строке НАД гридом корзины.
+            int cartLabelTop = rowTop - cartLabelGap;
+            if (label7 != null)
+            {
+                label7.Top = cartLabelTop + 4;
+                label7.Left = margin;
+            }
+            if (hintLabel != null)
+            {
+                hintLabel.Top = cartLabelTop + 7;
+                hintLabel.Left = margin + 318;
+            }
+
+            // ==== Кнопка «Добавить в корзину» — под гридом товаров слева ====
+            int addBtnTop = cartLabelTop - gap - addBtnH;
+            if (addToCartButton != null)
+            {
+                addToCartButton.Top = addBtnTop;
+                addToCartButton.Left = margin;
+            }
+
+            // ==== Грид «Товары» — занимает всё свободное пространство сверху ====
+            if (productsDataGridView != null)
+            {
+                productsDataGridView.Left = margin;
+                productsDataGridView.Width = this.ClientSize.Width - 2 * margin;
+                int top = productsDataGridView.Top;
+                int newHeight = addBtnTop - gap - top;
+                if (newHeight < 180) newHeight = 180;
+                productsDataGridView.Height = newHeight;
             }
         }
     }

@@ -35,16 +35,15 @@ namespace Smirnov_kursovaya.mainForm
             this.panel1 = new System.Windows.Forms.Panel();
             this.titleLabel = new System.Windows.Forms.Label();
             this.panel2 = new System.Windows.Forms.Panel();
+            this.btnRefreshCaptcha = new System.Windows.Forms.Button();
+            this.txtCaptcha = new System.Windows.Forms.TextBox();
+            this.pictureBoxCaptcha = new System.Windows.Forms.PictureBox();
             this.cancelButton = new System.Windows.Forms.Button();
             this.loginButton = new System.Windows.Forms.Button();
             this.passwordTextBox = new System.Windows.Forms.TextBox();
             this.usernameTextBox = new System.Windows.Forms.TextBox();
             this.label2 = new System.Windows.Forms.Label();
             this.label1 = new System.Windows.Forms.Label();
-            // CAPTCHA: создание элементов
-            this.pictureBoxCaptcha = new System.Windows.Forms.PictureBox();
-            this.txtCaptcha = new System.Windows.Forms.TextBox();
-            this.btnRefreshCaptcha = new System.Windows.Forms.Button();
             this.panel1.SuspendLayout();
             this.panel2.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBoxCaptcha)).BeginInit();
@@ -87,13 +86,46 @@ namespace Smirnov_kursovaya.mainForm
             this.panel2.Location = new System.Drawing.Point(0, 60);
             this.panel2.Name = "panel2";
             this.panel2.Padding = new System.Windows.Forms.Padding(20);
-            this.panel2.Size = new System.Drawing.Size(434, 200); // Начальная высота для обычного режима
+            this.panel2.Size = new System.Drawing.Size(434, 200);
             this.panel2.TabIndex = 1;
+            // 
+            // btnRefreshCaptcha
+            // 
+            this.btnRefreshCaptcha.BackColor = System.Drawing.Color.Coral;
+            this.btnRefreshCaptcha.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F);
+            this.btnRefreshCaptcha.Location = new System.Drawing.Point(330, 164);
+            this.btnRefreshCaptcha.Name = "btnRefreshCaptcha";
+            this.btnRefreshCaptcha.Size = new System.Drawing.Size(92, 32);
+            this.btnRefreshCaptcha.TabIndex = 8;
+            this.btnRefreshCaptcha.Text = "Обновить";
+            this.btnRefreshCaptcha.UseVisualStyleBackColor = false;
+            this.btnRefreshCaptcha.Visible = false;
+            this.btnRefreshCaptcha.Click += new System.EventHandler(this.btnRefreshCaptcha_Click);
+            // 
+            // txtCaptcha
+            // 
+            this.txtCaptcha.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F);
+            this.txtCaptcha.Location = new System.Drawing.Point(124, 170);
+            this.txtCaptcha.Name = "txtCaptcha";
+            this.txtCaptcha.Size = new System.Drawing.Size(200, 23);
+            this.txtCaptcha.TabIndex = 7;
+            this.txtCaptcha.Visible = false;
+            // 
+            // pictureBoxCaptcha
+            // 
+            this.pictureBoxCaptcha.Location = new System.Drawing.Point(124, 110);
+            this.pictureBoxCaptcha.Name = "pictureBoxCaptcha";
+            this.pictureBoxCaptcha.Size = new System.Drawing.Size(200, 50);
+            this.pictureBoxCaptcha.SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom;
+            this.pictureBoxCaptcha.TabIndex = 6;
+            this.pictureBoxCaptcha.TabStop = false;
+            this.pictureBoxCaptcha.Visible = false;
             // 
             // cancelButton
             // 
             this.cancelButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.cancelButton.BackColor = System.Drawing.Color.Coral;
+            this.cancelButton.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F);
             this.cancelButton.Location = new System.Drawing.Point(324, 160);
             this.cancelButton.MinimumSize = new System.Drawing.Size(90, 30);
             this.cancelButton.Name = "cancelButton";
@@ -107,6 +139,7 @@ namespace Smirnov_kursovaya.mainForm
             // 
             this.loginButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
             this.loginButton.BackColor = System.Drawing.Color.Coral;
+            this.loginButton.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F);
             this.loginButton.Location = new System.Drawing.Point(228, 160);
             this.loginButton.Name = "loginButton";
             this.loginButton.Size = new System.Drawing.Size(90, 30);
@@ -117,85 +150,59 @@ namespace Smirnov_kursovaya.mainForm
             // 
             // passwordTextBox
             // 
-            this.passwordTextBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            this.passwordTextBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
+            this.passwordTextBox.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F);
             this.passwordTextBox.Location = new System.Drawing.Point(124, 80);
             this.passwordTextBox.Name = "passwordTextBox";
             this.passwordTextBox.PasswordChar = '*';
-            this.passwordTextBox.Size = new System.Drawing.Size(290, 20);
+            this.passwordTextBox.Size = new System.Drawing.Size(290, 23);
             this.passwordTextBox.TabIndex = 3;
             this.passwordTextBox.KeyPress += new System.Windows.Forms.KeyPressEventHandler(this.passwordTextBox_KeyPress);
             // 
             // usernameTextBox
             // 
-            this.usernameTextBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            this.usernameTextBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
+            this.usernameTextBox.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F);
             this.usernameTextBox.Location = new System.Drawing.Point(124, 40);
             this.usernameTextBox.Name = "usernameTextBox";
-            this.usernameTextBox.Size = new System.Drawing.Size(290, 20);
+            this.usernameTextBox.Size = new System.Drawing.Size(290, 23);
             this.usernameTextBox.TabIndex = 2;
             // 
             // label2
             // 
             this.label2.AutoSize = true;
+            this.label2.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F);
             this.label2.Location = new System.Drawing.Point(20, 83);
             this.label2.Name = "label2";
-            this.label2.Size = new System.Drawing.Size(48, 13);
+            this.label2.Size = new System.Drawing.Size(61, 17);
             this.label2.TabIndex = 1;
             this.label2.Text = "Пароль:";
             // 
             // label1
             // 
             this.label1.AutoSize = true;
+            this.label1.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F);
             this.label1.Location = new System.Drawing.Point(20, 43);
             this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(41, 13);
+            this.label1.Size = new System.Drawing.Size(51, 17);
             this.label1.TabIndex = 0;
             this.label1.Text = "Логин:";
-            // 
-            // pictureBoxCaptcha
-            // 
-            this.pictureBoxCaptcha.Location = new System.Drawing.Point(124, 110);
-            this.pictureBoxCaptcha.Name = "pictureBoxCaptcha";
-            this.pictureBoxCaptcha.Size = new System.Drawing.Size(200, 50);
-            this.pictureBoxCaptcha.SizeMode = PictureBoxSizeMode.Zoom;
-            this.pictureBoxCaptcha.TabIndex = 6;
-            this.pictureBoxCaptcha.TabStop = false;
-            this.pictureBoxCaptcha.Visible = false;
-            // 
-            // txtCaptcha
-            // 
-            this.txtCaptcha.Location = new System.Drawing.Point(124, 170);
-            this.txtCaptcha.Name = "txtCaptcha";
-            this.txtCaptcha.Size = new System.Drawing.Size(200, 20);
-            this.txtCaptcha.TabIndex = 7;
-            this.txtCaptcha.Visible = false;
-            // 
-            // btnRefreshCaptcha
-            // 
-            this.btnRefreshCaptcha.BackColor = System.Drawing.Color.Coral;
-            this.btnRefreshCaptcha.Location = new System.Drawing.Point(330, 168);
-            this.btnRefreshCaptcha.Name = "btnRefreshCaptcha";
-            this.btnRefreshCaptcha.Size = new System.Drawing.Size(80, 23);
-            this.btnRefreshCaptcha.TabIndex = 8;
-            this.btnRefreshCaptcha.Text = "Обновить";
-            this.btnRefreshCaptcha.UseVisualStyleBackColor = false;
-            this.btnRefreshCaptcha.Visible = false;
-            this.btnRefreshCaptcha.Click += new System.EventHandler(this.btnRefreshCaptcha_Click);
             // 
             // Authentication
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(434, 260); // Обычный размер (без капчи)
+            this.ClientSize = new System.Drawing.Size(434, 260);
             this.Controls.Add(this.panel2);
             this.Controls.Add(this.panel1);
-            this.FormBorderStyle = FormBorderStyle.FixedSingle; // Запрещаем ручное изменение размера
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
             this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.MaximizeBox = false;
+            this.MaximumSize = new System.Drawing.Size(450, 340);
             this.MinimizeBox = false;
-            this.MaximumSize = new System.Drawing.Size(450, 340); // Максимальный размер для режима с капчей
-            this.MinimumSize = new System.Drawing.Size(450, 260); // Минимальный размер (обычный)
+            this.MinimumSize = new System.Drawing.Size(450, 260);
             this.Name = "Authentication";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "Авторизация";
